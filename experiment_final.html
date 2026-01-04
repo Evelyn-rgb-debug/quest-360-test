@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>VR 全景声音实验（orders_30subs 版本）</title>
+    <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+    <style>
+      body {
+        margin: 0;
+        background: #000;
+        color: #fff;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          "PingFang SC", "Microsoft YaHei", sans-serif;
+      }
+
+      #startBox,
+      #questionBox,
+      #endBox {
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        top: 30px;
+        max-width: 760px;
+        background: rgba(0, 0, 0, 0.7);
+        border-radius: 12px;
+        padding: 18px 22px 20px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        text-align: center;
+        z-index: 10;
+      }
+
+      #startBox h2,
+      #endBox h2 {
+        margin: 0 0 10px 0;
+        font-size: 22px;
+      }
+
+      #startBox {
+        display: none; /* 等顺序加载好再显示 */
+      }
+
+      #questionBox h3 {
+        margin: 6px 0 12px 0;
+        font-size: 20px;
+        line-height: 1.35;
+      }
+
+      #questionBox,
+      #endBox {
+        display: none;
+      }
+
+      #progress {
+        font-size: 13px;
+        opacity: 0.85;
+        margin-bottom: 8px;
+      }
+
+      #options {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+        margin-top: 6px;
+      }
+
+      button {
+        font-size: 16px;
+        padding: 8px 14px;
+        margin: 4px;
+        border-radius: 6px;
+        border: none;
+        cursor: pointer;
+        background: #ffffff;
+        color: #000;
+        white-space: nowrap;
+      }
+
+      button:hover {
+        background: #ff9800;
+        color: #000;
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- 视频资源（给 A-Frame 用） -->
+    <video
+      id="video"
+      crossorigin="anonymous"
+      webkit-playsinline
+      playsinline
+      controls
+    ></video>
+
+    <!-- A-Frame 场景：只负责 360° 视频 -->
+    <a-scene>
+      <a-videosphere id="sphere" src="#video" rotation="0 -90 0"></a-videosphere>
+      <a-camera position="0 0 0"></a-camera>
+    </a-scene>
+
+    <!-- 开始提示 -->
+    <div id="startBox">
+      <h2>点击开始实验</h2>
+      <p style="margin-top: 4px; margin-bottom: 10px;">
+        每段全景视频播放结束后，会弹出 4 个问题，请根据你刚刚听到的声音按顺序作答。
+      </p>
+      <button onclick="startExperiment()">开始</button>
+    </div>
+
+    <!-- 问卷弹窗 -->
+    <div id="questionBox">
+      <div id="progress"></div>
+      <h3 id="questionText"></h3>
+      <div id="options"></div>
+    </div>
+
+    <!-- 结束提示 -->
+    <div id="endBox">
+      <h2>实验结束，谢谢参与！</h2>
+      <p style="margin-top: 4px; margin-bottom: 6px;">
+        你可以关闭页面，本次实验数据会自动下载为 JSON 文件。
+      </p>
+    </div>
+
+    <script>
+      /************* 0. 问卷问题配置 *************/
+
+      const questions = [
+        {
+          key: "dominance",
+          text: "无人机声音在整体声环境中的主导程度有多大？",
+          options: [
+            "1 = 完全不主导",
+            "2 = 略微主导",
+            "3 = 中等主导",
+            "4 = 非常主导",
+            "5 = 完全主导"
+          ]
+        },
+        {
+          key: "loudness",
+          text: "无人机声音响度如何？",
+          options: [
+            "1 = 非常安静",
+            "2 = 略微响",
+            "3 = 中等响",
+            "4 = 非常响",
+            "5 = 极其响"
+          ]
+        },
+        {
+          key: "annoyance",
+          text: "无人机声音烦扰度如何？",
+          options: [
+            "1 = 完全不烦扰",
+            "2 = 略微烦扰",
+            "3 = 中等烦扰",
+            "4 = 非常烦扰",
+            "5 = 极其烦扰"
+          ]
+        },
+        {
+          key: "acceptability",
+          text:
+            "如果这种声音在你居住区或街道中经常出现，你会觉得它有多可接受？",
+          options: [
+            "1 = 不可接受",
+            "2 = 勉强可接受",
+            "3 = 中立",
+            "4 = 可接受",
+            "5 = 非常可接受"
+          ]
+        }
+      ];
+
+      /************* 1. 状态变量 *************/
+
+      let participantId = null;
+      let sequenceItems = []; // 来自 orders_30subs.json 的 sequence 数组
+      let videos = []; // 仅文件名数组，便于显示进度
+      let currentVideoIndex = -1;
+      let currentQuestionIndex = 0;
+      const answers = [];
+
+      const videoEl = document.getElementById("video");
+      const startBox = document.getElementById("startBox");
+      const questionBox = document.getElementById("questionBox");
+      const endBox = document.getElementById("endBox");
+      const questionTextEl = document.getElementById("questionText");
+      const optionsEl = document.getElementById("options");
+      const progressEl = document.getElementById("progress");
+
+      /************* 2. 读取 orders_30subs.json + 输入被试编号 *************/
+
+      async function initOrder() {
+        try {
+          const resp = await fetch("orders_30subs.json");
+          const orders = await resp.json(); // 顶层是数组，每个元素对应一个 participant
+
+          let pid = prompt(
+            `请输入被试编号（1 ~ ${orders.length} 之间的整数）：`
+          );
+          if (!pid) {
+            alert("未输入编号，实验终止。");
+            return;
+          }
+          pid = parseInt(pid, 10);
+          if (isNaN(pid) || pid < 1 || pid > orders.length) {
+            alert(`编号无效：${pid}，必须在 1 ~ ${orders.length} 范围内。`);
+            return;
+          }
+          participantId = pid;
+
+          // 找到对应 participant 对象（更稳妥，而不是直接 orders[pid-1]）
+          const pObj =
+            orders.find((item) => item.participant === pid) || orders[pid - 1];
+          if (!pObj || !Array.isArray(pObj.sequence)) {
+            alert("在 orders_30subs.json 中未找到该被试的 sequence。");
+            return;
+          }
+
+          sequenceItems = pObj.sequence; // 每个元素形如 {block, clip/video/snr, file: "..."}
+          videos = sequenceItems.map((item) => item.file);
+
+          console.log("被试编号:", participantId);
+          console.log("视频顺序:", videos);
+
+          startBox.style.display = "block";
+          alert(
+            `被试 ${participantId} 的视频顺序已加载：\n` + videos.join(", ")
+          );
+        } catch (err) {
+          console.error("读取 orders_30subs.json 失败:", err);
+          alert("无法读取 orders_30subs.json，请检查文件是否和本页面在同一目录。");
+        }
+      }
+
+      window.addEventListener("load", initOrder);
+
+      /************* 3. 主流程：播放视频 & 四题问卷 *************/
+
+      function startExperiment() {
+        if (!videos || videos.length === 0) {
+          alert("视频顺序尚未初始化，请刷新页面重试。");
+          return;
+        }
+        startBox.style.display = "none";
+        currentVideoIndex = 0;
+        playVideo(videos[currentVideoIndex]);
+      }
+
+      function playVideo(fileName) {
+        questionBox.style.display = "none";
+        endBox.style.display = "none";
+
+        videoEl.src = fileName;
+
+        // 仍然保留“找不到文件”的提示
+        videoEl.onerror = () => {
+            alert(
+            "无法加载视频文件： " +
+                fileName +
+                "。\n请检查该 mp4 是否与 HTML 在同一文件夹，且文件名与 orders_30subs.json 中完全一致。"
+            );
+            console.error("❌ 视频加载失败:", fileName);
+        };
+
+        const p = videoEl.play();
+        if (p && typeof p.then === "function") {
+            p.catch((err) => {
+            // 这里不再弹窗，只在控制台里记一笔
+            console.warn("自动播放可能被浏览器阻止:", err);
+            // 不做任何 UI 提示，让页面保持安静
+            });
+        }
+
+        console.log("▶ 播放视频:", fileName);
+
+        videoEl.onended = () => {
+            console.log("📺 播放结束:", fileName);
+            currentQuestionIndex = 0;
+            showQuestion();
+        };
+      }
+
+
+      function showQuestion() {
+        const q = questions[currentQuestionIndex];
+
+        const videoLabel = `${currentVideoIndex + 1} / ${videos.length}`;
+        const questionLabel = `${currentQuestionIndex + 1} / ${
+          questions.length
+        }`;
+        progressEl.textContent = `视频 ${videoLabel} · 问题 ${questionLabel}`;
+        questionTextEl.textContent = q.text;
+
+        optionsEl.innerHTML = "";
+        q.options.forEach((optText, idx) => {
+          const btn = document.createElement("button");
+          btn.textContent = optText;
+          const numericValue = idx + 1;
+          btn.onclick = () => handleAnswer(optText, numericValue);
+          optionsEl.appendChild(btn);
+        });
+
+        questionBox.style.display = "block";
+      }
+
+      function handleAnswer(optionText, numericValue) {
+        const seqItem = sequenceItems[currentVideoIndex];
+        const q = questions[currentQuestionIndex];
+
+        answers.push({
+          participantId,
+          sequenceIndex: currentVideoIndex,
+          // 来自 orders_30subs.json 的元数据（不同元素可能只有部分字段）
+          block: seqItem.block || null,
+          clip: seqItem.clip || null,
+          videoTag: seqItem.video || null,
+          snr: seqItem.snr || null,
+          file: seqItem.file,
+          questionIndex: currentQuestionIndex,
+          questionKey: q.key,
+          questionText: q.text,
+          value: numericValue,
+          label: optionText,
+          timestamp: new Date().toISOString()
+        });
+
+        console.log("✅ 记录答案:", answers[answers.length - 1]);
+
+        currentQuestionIndex++;
+        if (currentQuestionIndex < questions.length) {
+          showQuestion();
+        } else {
+          // 当前视频四题结束
+          questionBox.style.display = "none";
+          currentVideoIndex++;
+          if (currentVideoIndex >= videos.length) {
+            endExperiment();
+          } else {
+            playVideo(videos[currentVideoIndex]);
+          }
+        }
+      }
+
+      function endExperiment() {
+        console.log("🎯 实验结束，全部答案:", answers);
+        endBox.style.display = "block";
+
+        // 实验结束后自动下载 JSON
+        setTimeout(downloadAnswers, 500);
+      }
+
+      /************* 4. 自动导出 JSON *************/
+
+      function downloadAnswers() {
+        const payload = {
+          participantId,
+          videos,
+          sequence: sequenceItems,
+          questions,
+          answers,
+          finishedAt: new Date().toISOString(),
+          sourceOrderFile: "orders_30subs.json"
+        };
+
+        const blob = new Blob([JSON.stringify(payload, null, 2)], {
+          type: "application/json"
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        const timestamp = new Date()
+          .toISOString()
+          .replace(/[:.]/g, "-")
+          .slice(0, 19);
+        a.href = url;
+        a.download = `vr_answers_pid${participantId || "NA"}_${timestamp}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+    </script>
+  </body>
+</html>
