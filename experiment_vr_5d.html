@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>VR 全景声音实验（Quest 360 + 3D 问卷 + Baseline 预留）</title>
+
+    <!-- A-Frame -->
+    <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
+
+    <style>
+      body {
+        margin: 0;
+        background: #000;
+        color: #fff;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          "PingFang SC", "Microsoft YaHei", sans-serif;
+        overflow: hidden;
+      }
+
+      a-scene {
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+      }
+
+      /* 顶部开始提示框（只在网页模式下出现） */
+      #startBox {
+        position: fixed;
+        left: 50%;
+        transform: translateX(-50%);
+        top: 20px;
+        max-width: 760px;
+        width: min(760px, calc(100vw - 24px));
+        background: rgba(0, 0, 0, 0.8);
+        border-radius: 12px;
+        padding: 16px 18px 18px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+        text-align: center;
+        z-index: 10;
+        display: none;
+      }
+
+      #startBox h2 {
+        margin: 0 0 10px 0;
+        font-size: 20px;
+      }
+
+      #startBox p {
+        margin: 0 0 12px 0;
+        font-size: 14px;
+        line-height: 1.4;
+        opacity: 0.9;
+      }
+
+      #startBox button {
+        font-size: 16px;
+        padding: 8px 16px;
+        border-radius: 10px;
+        border: none;
+        cursor: pointer;
+        background: #ffffff;
+        color: #000;
+      }
+
+      #startBox button:hover {
+        background: #ff9800;
+        color: #000;
+      }
+
+      /* 播放授权提示（只在网页模式下出现） */
+      #tapToPlay {
+        position: fixed;
+        left: 50%;
+        transform: translateX(-50%);
+        top: 20px;
+        max-width: 480px;
+        width: min(480px, calc(100vw - 24px));
+        background: rgba(0, 0, 0, 0.8);
+        border-radius: 12px;
+        padding: 14px 16px 16px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+        text-align: center;
+        z-index: 11;
+        display: none;
+      }
+
+      #tapToPlay h2 {
+        margin: 0 0 8px 0;
+        font-size: 18px;
+      }
+
+      #tapToPlay p {
+        margin: 0 0 10px 0;
+        font-size: 14px;
+        opacity: 0.9;
+      }
+
+      #tapToPlay button {
+        font-size: 16px;
+        padding: 7px 14px;
+        border-radius: 10px;
+        border: none;
+        cursor: pointer;
+        background: #ffffff;
+        color: #000;
+      }
+
+      #tapToPlay button:hover {
+        background: #ff9800;
+        color: #000;
+      }
+
+      /* 底部状态条（主要用于调试，可关） */
+      #status {
+        position: fixed;
+        left: 12px;
+        bottom: 12px;
+        z-index: 12;
+        background: rgba(0, 0, 0, 0.5);
+        padding: 8px 10px;
+        border-radius: 10px;
+        max-width: min(520px, calc(100vw - 24px));
+        font-size: 13px;
+        line-height: 1.35;
+        opacity: 0.9;
+      }
+
+      /* 网页模式下右上角的“退出 VR”按钮（沉浸模式退出后用） */
+      #exitVrHtmlBtn {
+        position: fixed;
+        right: 12px;
+        top: 12px;
+        z-index: 12;
+        padding: 8px 12px;
+        border-radius: 10px;
+        border: none;
+        cursor: pointer;
+        background: rgba(255, 255, 255, 0.92);
+        color: #000;
+        font-size: 14px;
+      }
+
+      #exitVrHtmlBtn:hover {
+        background: #ff9800;
+        color: #000;
+      }
+
+      /* 隐藏 video 元素本身，只用作纹理源 */
+      #video {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        left: -9999px;
+        top: -9999px;
+        opacity: 0;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- A-Frame 场景 -->
+    <a-scene
+      id="scene"
+      background="color: #000"
+      renderer="antialias: true; colorManagement: true"
+      vr-mode-ui="enabled: true"
+    >
+      <a-assets timeout="30000">
+        <!-- 360 视频纹理 -->
+        <video
+          id="video"
+          preload="auto"
+          crossorigin="anonymous"
+          playsinline
+          webkit-playsinline
+        ></video>
+
+        <!-- Baseline 预留 MP3：未来你可以放 baseline.mp3 到同目录 -->
+        <audio
+          id="baselineAudio"
+          crossorigin="anonymous"
+        ></audio>
+      </a-assets>
+
+      <!-- 360 equirect 视频贴到球内侧 -->
+      <a-videosphere
+        id="sphere"
+        src="#video"
+        rotation="0 -90 0"
+      ></a-videosphere>
+
+      <!-- 相机 + 凝视光标（光标始终在视野中心） -->
+      <a-entity id="rig" position="0 0 0">
+        <a-camera id="camera" position="0 1.6 0" wasd-controls-enabled="false">
+          <a-cursor
+            id="cursor"
+            fuse="true"
+            fuse-timeout="800"
+            raycaster="objects: .clickable"
+            geometry="primitive: ring; radiusInner: 0.01; radiusOuter: 0.018"
+            material="color: #FFFF00; shader: flat"
+          ></a-cursor>
+        </a-camera>
+      </a-entity>
+
+      <!-- 3D 问卷面板：固定在世界坐标正前方 -->
+      <a-entity
+        id="questionPanel"
+        position="0 1.6 -2"
+        visible="false"
+      >
+        <a-plane
+          id="qBg"
+          width="1.7"
+          height="1.2"
+          color="#222222"
+          opacity="0.95"
+        ></a-plane>
+
+        <a-text
+          id="qProgress3d"
+          value=""
+          align="center"
+          color="#cccccc"
+          width="1.6"
+          position="0 0.48 0.02"
+          font="cn-msdf.json"
+          negate="false"
+        ></a-text>
+
+        <a-text
+          id="qTitle"
+          value="问题"
+          align="center"
+          color="#ffffff"
+          width="1.6"
+          position="0 0.3 0.02"
+          font="cn-msdf.json"
+          negate="false"
+        ></a-text>
+
+        <!-- 五个选项按钮（最多 5 级量表） -->
+        <a-entity id="opt0" position="0 0.15 0.03">
+          <a-plane
+            class="qOption clickable"
+            data-index="0"
+            width="1.5"
+            height="0.17"
+            color="#ffffff"
+            opacity="0.96"
+          ></a-plane>
+          <a-text
+            class="qLabel"
+            value="选项1"
+            align="center"
+            color="#000000"
+            width="1.4"
+            position="0 0 0.02"
+            font="cn-msdf.json"
+            negate="false"
+          ></a-text>
+        </a-entity>
+
+        <a-entity id="opt1" position="0 -0.03 0.03">
+          <a-plane
+            class="qOption clickable"
+            data-index="1"
+            width="1.5"
+            height="0.17"
+            color="#ffffff"
+            opacity="0.96"
+          ></a-plane>
+          <a-text
+            class="qLabel"
+            value="选项2"
+            align="center"
+            color="#000000"
+            width="1.4"
+            position="0 0 0.02"
+            font="cn-msdf.json"
+            negate="false"
+          ></a-text>
+        </a-entity>
+
+        <a-entity id="opt2" position="0 -0.21 0.03">
+          <a-plane
+            class="qOption clickable"
+            data-index="2"
+            width="1.5"
+            height="0.17"
+            color="#ffffff"
+            opacity="0.96"
+          ></a-plane>
+          <a-text
+            class="qLabel"
+            value="选项3"
+            align="center"
+            color="#000000"
+            width="1.4"
+            position="0 0 0.02"
+            font="cn-msdf.json"
+            negate="false"
+          ></a-text>
+        </a-entity>
+
+        <a-entity id="opt3" position="0 -0.39 0.03">
+          <a-plane
+            class="qOption clickable"
+            data-index="3"
+            width="1.5"
+            height="0.17"
+            color="#ffffff"
+            opacity="0.96"
+          ></a-plane>
+          <a-text
+            class="qLabel"
+            value="选项4"
+            align="center"
+            color="#000000"
+            width="1.4"
+            position="0 0 0.02"
+            font="cn-msdf.json"
+            negate="false"
+          ></a-text>
+        </a-entity>
+
+        <a-entity id="opt4" position="0 -0.57 0.03">
+          <a-plane
+            class="qOption clickable"
+            data-index="4"
+            width="1.5"
+            height="0.17"
+            color="#ffffff"
+            opacity="0.96"
+          ></a-plane>
+          <a-text
+            class="qLabel"
+            value="选项5"
+            align="center"
+            color="#000000"
+            width="1.4"
+            position="0 0 0.02"
+            font="cn-msdf.json"
+            negate="false"
+          ></a-text>
+        </a-entity>
+      </a-entity>
+
+      <!-- 3D 退出沉浸模式按钮：固定在脚下前方 -->
+      <a-entity id="exitBtn3D" position="0 0.9 -1.2">
+        <a-plane
+          id="exitPlane"
+          class="clickable"
+          width="0.6"
+          height="0.16"
+          color="#ffffff"
+          opacity="0.95"
+        ></a-plane>
+        <a-text
+          value="退出沉浸"
+          align="center"
+          color="#000000"
+          width="0.9"
+          position="0 0 0.02"
+          font="cn-msdf.json"
+          negate="false"
+        ></a-text>
+      </a-entity>
+
+      <!-- 结束提示面板：固定在世界坐标正前方 -->
+      <a-entity
+        id="endPanel"
+        position="0 1.6 -2"
+        visible="false"
+      >
+        <a-plane
+          width="1.6"
+          height="0.6"
+          color="#222222"
+          opacity="0.95"
+        ></a-plane>
+        <a-text
+          id="endText"
+          value="实验结束，感谢参加！"
+          align="center"
+          color="#ffffff"
+          width="1.5"
+          position="0 0.1 0.02"
+          font="cn-msdf.json"
+          negate="false"
+        ></a-text>
+        <a-text
+          value="你可以摘下头显或退出页面。"
+          align="center"
+          color="#cccccc"
+          width="1.5"
+          position="0 -0.15 0.02"
+          font="cn-msdf.json"
+          negate="false"
+        ></a-text>
+      </a-entity>
+    </a-scene>
+
+    <!-- 播放被浏览器阻止时的兜底层（只在网页模式下可见） -->
+    <div id="tapToPlay">
+      <h2>需要点击来开始播放</h2>
+      <p>浏览器阻止了自动播放，请点击下面按钮以允许视频/声音播放。</p>
+      <button id="tapPlayBtn">点此播放</button>
+    </div>
+
+    <!-- 开始提示（在网页模式下设置被试编号 & 开始实验） -->
+    <div id="startBox">
+      <h2>点击开始实验</h2>
+      <p>
+        页面会根据 <b>orders_30subs.json</b> 中的顺序播放视频；<br />
+        所有 trial（包括演示）都会在播放结束后弹出 4 个中文问题；<br />
+        使用视线+凝视触发（停留约 0.8 秒）来选择答案或退出沉浸。
+      </p>
+      <button id="startBtn">开始</button>
+    </div>
+
+    <!-- 网页模式下的“退出 VR”按钮（从沉浸退出后可用） -->
+    <button id="exitVrHtmlBtn" onclick="document.querySelector('a-scene').exitVR();">
+      退出沉浸
+    </button>
+
+    <!-- 底部状态条（调试用，可忽略） -->
+    <div id="status">状态：等待加载 orders_30subs.json …</div>
+
+    <script>
+      /************* 0. 参数 *************/
+      const ORDER_FILE = "orders_30subs.json";
+      const BASELINE_MP3_DEFAULT = "baseline.mp3"; // 建议 baseline 音频命名
+
+      /************* 1. 问卷配置（中文版本） *************/
+      const questions = [
+        {
+          key: "dominance",
+          text: "无人机声音在整体声环境中的主导程度有多大？",
+          options: [
+            "1 完全不主导",
+            "2 略微主导",
+            "3 中等主导",
+            "4 非常主导",
+            "5 完全主导"
+          ]
+        },
+        {
+          key: "loudness",
+          text: "无人机声音的响度如何？",
+          options: [
+            "1 非常安静",
+            "2 略微响",
+            "3 中等响",
+            "4 很响",
+            "5 非常响"
+          ]
+        },
+        {
+          key: "annoyance",
+          text: "你觉得无人机声音有多烦扰？",
+          options: [
+            "1 完全不烦扰",
+            "2 略微烦扰",
+            "3 中等烦扰",
+            "4 很烦扰",
+            "5 极其烦扰"
+          ]
+        },
+        {
+          key: "acceptability",
+          text: "如果这类声音在你日常环境中经常出现，你觉得有多可接受？",
+          options: [
+            "1 完全不可接受",
+            "2 勉强可以接受",
+            "3 一般/中立",
+            "4 可以接受",
+            "5 完全可以接受"
+          ]
+        }
+      ];
+
+      /************* 2. 状态变量 *************/
+      let participantId = null;
+      let ordersAll = null;
+      let sequenceItems = [];
+      let currentTrialIndex = -1;
+      let currentQuestionIndex = 0;
+      let answers = [];
+
+      const sceneEl = document.getElementById("scene");
+      const videoEl = document.getElementById("video");
+      const sphereEl = document.getElementById("sphere");
+      const baselineAudio = document.getElementById("baselineAudio");
+
+      const startBox = document.getElementById("startBox");
+      const startBtn = document.getElementById("startBtn");
+      const tapToPlay = document.getElementById("tapToPlay");
+      const tapPlayBtn = document.getElementById("tapPlayBtn");
+      const statusEl = document.getElementById("status");
+
+      const questionPanel = document.getElementById("questionPanel");
+      const qTitle = document.getElementById("qTitle");
+      const qProgress3d = document.getElementById("qProgress3d");
+      const optionPlanes = Array.from(document.querySelectorAll(".qOption"));
+      const endPanel = document.getElementById("endPanel");
+
+      const exitPlane = document.getElementById("exitPlane");
+
+      function setStatus(msg) {
+        if (statusEl) statusEl.textContent = "状态：" + msg;
+        console.log("[STATUS]", msg);
+      }
+
+      /************* 3. 播放控制（视频） *************/
+      function showTapToPlay(reason) {
+        tapToPlay.style.display = "block";
+        setStatus(
+          (reason ? `需要点击授权播放（${reason}）` : "需要点击授权播放") + "。"
+        );
+      }
+
+      function hideTapToPlay() {
+        tapToPlay.style.display = "none";
+      }
+
+      async function tryPlay(reason) {
+        try {
+          const p = videoEl.play();
+          if (p && typeof p.then === "function") {
+            await p;
+          }
+          hideTapToPlay();
+          setStatus("播放中：" + (videoEl.currentSrc || videoEl.src || ""));
+          return true;
+        } catch (err) {
+          console.warn("play() 被阻止/失败:", err);
+          showTapToPlay(reason || "play() 被阻止");
+          return false;
+        }
+      }
+
+      // 进入 VR 时尝试恢复视频播放
+      sceneEl.addEventListener("enter-vr", () => {
+        setStatus("已进入沉浸式模式（尝试恢复播放）…");
+        tryPlay("enter-vr");
+      });
+
+      // 从后台回到前台时尝试恢复视频播放
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) {
+          tryPlay("visibilitychange");
+        }
+      });
+
+      tapPlayBtn.addEventListener("click", () => {
+        hideTapToPlay();
+        tryPlay("tapToPlay");
+      });
+
+      /************* 4. 3D UI 交互绑定（问卷 + 退出按钮） *************/
+      optionPlanes.forEach((plane) => {
+        const idx = parseInt(plane.dataset.index || "0", 10);
+
+        plane.addEventListener("mouseenter", () => {
+          const visible = questionPanel.getAttribute("visible");
+          if (!(visible === true || visible === "true")) return;
+          plane.setAttribute("color", "#ff9800");
+          plane.setAttribute("opacity", "1.0");
+        });
+
+        plane.addEventListener("mouseleave", () => {
+          plane.setAttribute("color", "#ffffff");
+          plane.setAttribute("opacity", "0.96");
+        });
+
+        plane.addEventListener("click", () => {
+          const visible = questionPanel.getAttribute("visible");
+          if (!(visible === true || visible === "true")) return;
+          handleOptionClick(idx);
+        });
+      });
+
+      if (exitPlane) {
+        exitPlane.addEventListener("mouseenter", () => {
+          exitPlane.setAttribute("color", "#ff9800");
+        });
+        exitPlane.addEventListener("mouseleave", () => {
+          exitPlane.setAttribute("color", "#ffffff");
+        });
+        exitPlane.addEventListener("click", () => {
+          sceneEl.exitVR();
+          setStatus("已请求退出沉浸式模式。");
+        });
+      }
+
+      /************* 5. 工具函数：识别 Demo / Baseline MP3 *************/
+      function isDemoItem(seqItem) {
+        if (!seqItem) return false;
+        const b = (seqItem.block || "").toLowerCase();
+        const c = (seqItem.clip || "").toLowerCase();
+        const f = (seqItem.file || "").toLowerCase();
+        if (b === "demo") return true;
+        if (c.indexOf("demo") >= 0) return true;
+        if (f.indexOf("demo") >= 0) return true;
+        return false;
+      }
+
+      function isAudioItem(seqItem) {
+        if (!seqItem || !seqItem.file) return false;
+        return /\.mp3(\?|#|$)/i.test(seqItem.file.trim());
+      }
+
+      /************* 6. 读取 orders_30subs.json + 选择被试编号 *************/
+      async function initOrder() {
+        try {
+          setStatus("正在读取 " + ORDER_FILE + " …");
+          const resp = await fetch(ORDER_FILE, { cache: "no-store" });
+          const orders = await resp.json();
+          if (!Array.isArray(orders) || orders.length === 0) {
+            alert("orders_30subs.json 格式异常或为空。");
+            setStatus("orders_30subs.json 格式异常或为空。");
+            return;
+          }
+          ordersAll = orders;
+
+          const maxPid = orders.length;
+          let pidStr = prompt(
+            `请输入被试编号（1 ~ ${maxPid} 之间的整数）：`
+          );
+          if (!pidStr) {
+            alert("未输入编号，实验终止。");
+            setStatus("未输入被试编号，已停止。");
+            return;
+          }
+          const pid = parseInt(pidStr, 10);
+          if (isNaN(pid) || pid < 1 || pid > maxPid) {
+            alert(`编号无效：${pid}，必须在 1 ~ ${maxPid} 范围内。`);
+            setStatus("被试编号无效：" + pid);
+            return;
+          }
+          participantId = pid;
+
+          const pObj =
+            orders.find((item) => item.participant === pid) || orders[pid - 1];
+          if (!pObj || !Array.isArray(pObj.sequence)) {
+            alert("在 orders_30subs.json 中未找到该被试的 sequence。");
+            setStatus("未找到该被试的 sequence。");
+            return;
+          }
+
+          sequenceItems = pObj.sequence.slice();
+          console.log("被试编号:", participantId);
+          console.log("顺序:", sequenceItems.map((s) => s.file));
+
+          startBox.style.display = "block";
+          setStatus("顺序已加载（被试 " + participantId + "）。点击“开始”。");
+        } catch (err) {
+          console.error("读取 orders_30subs.json 失败:", err);
+          alert("无法读取 orders_30subs.json，请检查文件是否和本页面在同一目录。");
+          setStatus("读取 orders_30subs.json 失败。");
+        }
+      }
+
+      window.addEventListener("load", initOrder);
+
+      /************* 7. 主流程：开始实验 / 播放 trial / 问卷 *************/
+      startBtn.addEventListener("click", () => {
+        if (!sequenceItems || sequenceItems.length === 0) {
+          alert("视频顺序尚未初始化，请刷新页面重试。");
+          return;
+        }
+        startBox.style.display = "none";
+        currentTrialIndex = 0;
+        playTrial(currentTrialIndex);
+      });
+
+      function playTrial(index) {
+        if (index < 0 || index >= sequenceItems.length) {
+          endExperiment();
+          return;
+        }
+        questionPanel.setAttribute("visible", false);
+        endPanel.setAttribute("visible", false);
+
+        const seqItem = sequenceItems[index];
+        const fileName = (seqItem.file || "").trim();
+
+        if (!fileName) {
+          console.warn("该 trial 没有 file 字段，直接跳到下一条:", seqItem);
+          currentTrialIndex++;
+          playTrial(currentTrialIndex);
+          return;
+        }
+
+        if (isAudioItem(seqItem)) {
+          playAudioTrial(seqItem, fileName);
+        } else {
+          playVideoTrial(seqItem, fileName);
+        }
+      }
+
+      function playVideoTrial(seqItem, fileName) {
+        // 停止 baseline 音频
+        try { baselineAudio.pause(); } catch (e) {}
+
+        // 确保 videosphere 可见
+        sphereEl.setAttribute("visible", true);
+
+        try { videoEl.pause(); } catch (e) {}
+        videoEl.removeAttribute("src");
+        videoEl.load();
+
+        videoEl.src = fileName;
+        videoEl.load();
+
+        setStatus("加载视频：" + fileName);
+
+        videoEl.onerror = () => {
+          alert(
+            "无法加载视频文件： " +
+              fileName +
+              "\n请检查该 mp4 是否与 HTML 在同一文件夹，且文件名与 orders_30subs.json 中完全一致。"
+          );
+          setStatus("视频加载失败：" + fileName);
+          console.error("❌ 视频加载失败:", fileName);
+        };
+
+        const onCanPlay = async () => {
+          videoEl.removeEventListener("canplay", onCanPlay);
+          try { videoEl.currentTime = 0; } catch (e) {}
+          const ok = await tryPlay("canplay");
+          if (!ok) return;
+
+          setStatus("开始播放视频：" + fileName);
+
+          videoEl.onended = () => {
+            setStatus("视频播放结束：" + fileName);
+            handleTrialEnded(seqItem);
+          };
+        };
+
+        videoEl.addEventListener("canplay", onCanPlay, { once: false });
+      }
+
+      function playAudioTrial(seqItem, fileName) {
+        // 音频 baseline：隐藏球体，背景黑屏，只播 MP3
+        try { videoEl.pause(); } catch (e) {}
+        sphereEl.setAttribute("visible", false);
+
+        try { baselineAudio.pause(); } catch (e) {}
+        baselineAudio.removeAttribute("src");
+        baselineAudio.src = fileName;
+        baselineAudio.load();
+
+        setStatus("加载音频（baseline）：" + fileName);
+
+        baselineAudio.onerror = () => {
+          console.error("❌ Baseline 音频加载失败：", fileName);
+          alert(
+            "无法加载 baseline 音频： " +
+              fileName +
+              "\n请确认 mp3 文件与 HTML 在同一目录。"
+          );
+          // 即便失败，也直接进入问卷，避免流程卡死
+          handleTrialEnded(seqItem);
+        };
+
+        baselineAudio.onended = () => {
+          setStatus("Baseline 音频播放结束：" + fileName);
+          handleTrialEnded(seqItem);
+        };
+
+        // 注意：目前 baseline MP3 在你的 JSON 里应该还不存在，
+        // 所以这段逻辑暂时不会被执行，不会影响你先跑通流程。
+        baselineAudio.play().catch((err) => {
+          console.warn("Baseline 音频 play() 被阻止/失败:", err);
+          // 如果播放失败，同样直接进入问卷
+          handleTrialEnded(seqItem);
+        });
+      }
+
+      function handleTrialEnded(seqItem) {
+        // Demo 也要出题
+        currentQuestionIndex = 0;
+        showQuestion3D();
+      }
+
+      function showQuestion3D() {
+        const seqItem = sequenceItems[currentTrialIndex];
+        const q = questions[currentQuestionIndex];
+
+        const videoLabel = `${currentTrialIndex + 1} / ${sequenceItems.length}`;
+        const questionLabel = `${currentQuestionIndex + 1} / ${questions.length}`;
+
+        let header = `视频 ${videoLabel} · 问题 ${questionLabel}`;
+        if (isDemoItem(seqItem)) {
+          header = `演示 · 视频 ${videoLabel} · 问题 ${questionLabel}`;
+        }
+        qProgress3d.setAttribute("value", header);
+        qTitle.setAttribute("value", q.text);
+
+        optionPlanes.forEach((plane, idx) => {
+          const parent = plane.parentElement;
+          const labelText = parent.querySelector(".qLabel");
+          if (idx < q.options.length) {
+            parent.setAttribute("visible", true);
+            plane.setAttribute("color", "#ffffff");
+            plane.setAttribute("opacity", "0.96");
+            if (labelText) {
+              labelText.setAttribute("value", q.options[idx]);
+            }
+          } else {
+            parent.setAttribute("visible", false);
+          }
+        });
+
+        questionPanel.setAttribute("visible", true);
+        setStatus("显示问题：" + q.text);
+      }
+
+      function handleOptionClick(optionIndex) {
+        const seqItem = sequenceItems[currentTrialIndex];
+        const q = questions[currentQuestionIndex];
+        const numericValue = optionIndex + 1;
+        const label = q.options[optionIndex];
+
+        answers.push({
+          participantId,
+          sequenceIndex: currentTrialIndex,
+          block: seqItem.block || null,
+          clip: seqItem.clip || null,
+          videoTag: seqItem.video || null,
+          snr: seqItem.snr || null,
+          file: seqItem.file || null,
+          isDemo: isDemoItem(seqItem),
+          questionIndex: currentQuestionIndex,
+          questionKey: q.key,
+          questionText: q.text,
+          value: numericValue,
+          label,
+          timestamp: new Date().toISOString()
+        });
+
+        currentQuestionIndex++;
+        if (currentQuestionIndex < questions.length) {
+          showQuestion3D();
+        } else {
+          questionPanel.setAttribute("visible", false);
+          currentTrialIndex++;
+          playTrial(currentTrialIndex);
+        }
+      }
+
+      /************* 8. 结束 & 导出数据 *************/
+      function endExperiment() {
+        questionPanel.setAttribute("visible", false);
+        endPanel.setAttribute("visible", true);
+        setStatus("实验结束，准备导出 JSON …");
+        setTimeout(downloadAnswers, 500);
+      }
+
+      function downloadAnswers() {
+        const payload = {
+          participantId,
+          sequence: sequenceItems,
+          questions,
+          answers,
+          finishedAt: new Date().toISOString(),
+          sourceOrderFile: ORDER_FILE,
+          baselineMp3Suggestion: BASELINE_MP3_DEFAULT
+        };
+
+        const blob = new Blob([JSON.stringify(payload, null, 2)], {
+          type: "application/json"
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+        a.href = url;
+        a.download = `vr_answers_pid${participantId || "NA"}_${ts}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        setStatus("已触发下载：" + a.download);
+      }
+    </script>
+  </body>
+</html>
