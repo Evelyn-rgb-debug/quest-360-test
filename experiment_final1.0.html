@@ -80,31 +80,6 @@
         background: #ff9800;
         color: #000;
       }
-
-
-/* Baseline: 全屏黑屏提示（无需单独渲染视频） */
-#baselineOverlay {
-  position: fixed;
-  inset: 0;
-  background: #000;
-  color: #fff;
-  display: none; /* showBaselineOverlay() 时切换为 flex */
-  z-index: 9999;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 24px;
-}
-#baselineOverlay .title {
-  font-size: 52px;
-  margin-bottom: 10px;
-  letter-spacing: 1px;
-}
-#baselineOverlay .subtitle {
-  font-size: 22px;
-  opacity: 0.75;
-  line-height: 1.4;
-}
     </style>
   </head>
 
@@ -147,17 +122,6 @@
         你可以关闭页面，本次实验数据会自动下载为 JSON 文件。
       </p>
     </div>
-
-
-
-
-<!-- Baseline 黑屏提示层（用于“请闭眼”） -->
-<div id="baselineOverlay">
-  <div>
-    <div class="title">请闭眼</div>
-    <div class="subtitle">请保持不动，等待声音播放</div>
-  </div>
-</div>
 
     <script>
       /************* 0. 问卷问题配置 *************/
@@ -217,14 +181,12 @@
       let videos = []; // 仅文件名数组，便于显示进度
       let currentVideoIndex = -1;
       let currentQuestionIndex = 0;
-      let baselineTimer = null; // Baseline（黑屏提示）计时器
       const answers = [];
 
       const videoEl = document.getElementById("video");
       const startBox = document.getElementById("startBox");
       const questionBox = document.getElementById("questionBox");
       const endBox = document.getElementById("endBox");
-      const baselineOverlay = document.getElementById("baselineOverlay");
       const questionTextEl = document.getElementById("questionText");
       const optionsEl = document.getElementById("options");
       const progressEl = document.getElementById("progress");
@@ -259,10 +221,7 @@
           }
 
           sequenceItems = pObj.sequence; // 每个元素形如 {block, clip/video/snr, file: "..."}
-          videos = sequenceItems.map((item) => {
-            const f = (item.file || "").trim();
-            return f ? f : "BASELINE";
-          });
+          videos = sequenceItems.map((item) => item.file);
 
           console.log("被试编号:", participantId);
           console.log("视频顺序:", videos);
@@ -281,106 +240,6 @@
 
       /************* 3. 主流程：播放视频 & 四题问卷 *************/
 
-
-// 判定某个 sequenceItem 是否为 Baseline（无需视频文件）
-function isBaselineItem(seqItem) {
-  if (!seqItem) return false;
-  if (seqItem.isBaseline === true) return true;
-  if (
-    typeof seqItem.type === "string" &&
-    seqItem.type.toLowerCase() === "baseline"
-  ) {
-    return true;
-  }
-  const file = (seqItem.file || "").trim();
-  // 允许在 orders_30subs.json 中将 baseline 的 file 设为空字符串
-  if (!file) return true;
-
-  // 也兼容文件名中包含 baseline/black/blank 的情况（如 baseline.mp4）
-  return /(^|\/)(baseline|black|blank)(_|-|\.|$)/i.test(file);
-}
-
-function showBaselineOverlay(
-  title = "请闭眼",
-  subtitle = "请保持不动，等待声音播放"
-) {
-  if (!baselineOverlay) return;
-  const titleEl = baselineOverlay.querySelector(".title");
-  const subEl = baselineOverlay.querySelector(".subtitle");
-  if (titleEl) titleEl.textContent = title;
-  if (subEl) subEl.textContent = subtitle;
-  baselineOverlay.style.display = "flex";
-}
-
-function hideBaselineOverlay() {
-  if (!baselineOverlay) return;
-  baselineOverlay.style.display = "none";
-}
-
-// Baseline：黑屏提示 + 可配置计时（默认 10 秒），结束后进入同一套问卷
-function runBaseline(seqItem) {
-  questionBox.style.display = "none";
-  endBox.style.display = "none";
-
-        // 进入视频 trial 时确保 Baseline 覆盖层已关闭
-        if (baselineTimer) {
-          clearTimeout(baselineTimer);
-          baselineTimer = null;
-        }
-        hideBaselineOverlay();
-
-  // 停止当前视频，避免音画残留干扰
-  try {
-    videoEl.pause();
-  } catch (e) {}
-
-  // 清理可能遗留的定时器
-  if (baselineTimer) {
-    clearTimeout(baselineTimer);
-    baselineTimer = null;
-  }
-
-  const durationSec = Number(
-    seqItem?.durationSec ?? seqItem?.baselineDurationSec ?? 10
-  );
-  const title = seqItem?.baselineTitle || "请闭眼";
-  const subtitle =
-    seqItem?.baselineSubtitle || "请保持不动，等待声音播放";
-
-  showBaselineOverlay(title, subtitle);
-
-  console.log("⏳ Baseline 开始:", { durationSec, seqItem });
-
-  baselineTimer = setTimeout(() => {
-    hideBaselineOverlay();
-    console.log("⏭️ Baseline 结束");
-    currentQuestionIndex = 0;
-    showQuestion();
-  }, Math.max(1, durationSec) * 1000);
-}
-
-// 按 sequenceItem 播放当前 trial：Baseline 用黑屏提示，其余播放视频
-function playTrial(index) {
-  if (index < 0 || index >= sequenceItems.length) {
-    endExperiment();
-    return;
-  }
-  const seqItem = sequenceItems[index];
-
-  // 每次进入新 trial 先清理 baseline 状态
-  if (baselineTimer) {
-    clearTimeout(baselineTimer);
-    baselineTimer = null;
-  }
-  hideBaselineOverlay();
-
-  if (isBaselineItem(seqItem)) {
-    runBaseline(seqItem);
-  } else {
-    playVideo(seqItem.file);
-  }
-}
-
       function startExperiment() {
         if (!videos || videos.length === 0) {
           alert("视频顺序尚未初始化，请刷新页面重试。");
@@ -388,7 +247,7 @@ function playTrial(index) {
         }
         startBox.style.display = "none";
         currentVideoIndex = 0;
-        playTrial(currentVideoIndex);
+        playVideo(videos[currentVideoIndex]);
       }
 
       function playVideo(fileName) {
@@ -481,7 +340,7 @@ function playTrial(index) {
           if (currentVideoIndex >= videos.length) {
             endExperiment();
           } else {
-            playTrial(currentVideoIndex);
+            playVideo(videos[currentVideoIndex]);
           }
         }
       }
