@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VR 360 Video Test</title>
+  <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
+</head>
+<body style="margin:0;">
+  <!-- 注意：视频文件名先写死成 videodemo.mp4，确保你仓库根目录确实有它 -->
+  <a-scene>
+    <a-assets>
+      <video
+        id="v"
+        src="./videodemo.mp4"
+        preload="auto"
+        crossorigin="anonymous"
+        playsinline
+        webkit-playsinline
+      ></video>
+    </a-assets>
+
+    <!-- 360 equirect 视频贴到球内侧；rotation 让你正前方对准画面 -->
+    <a-videosphere src="#v" rotation="0 -90 0"></a-videosphere>
+
+    <a-camera position="0 1.6 0"></a-camera>
+  </a-scene>
+
+  <!-- 用户点击后再播放（Quest 浏览器通常要求用户手势） -->
+  <button
+    style="position:fixed;left:12px;top:12px;z-index:9999;padding:10px 12px;"
+    onclick="document.querySelector('#v').play();"
+  >Play</button>
+</body>
+</html>
