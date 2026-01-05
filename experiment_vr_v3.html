@@ -1,0 +1,630 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VR 全景声音实验（Quest / A-Frame）</title>
+  <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
+  <style>
+    html, body { height: 100%; margin: 0; background: #000; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+    /* 顶层：仅用于输入被试序号（非沉浸模式） */
+    #sidOverlay{
+      position: fixed; inset: 0; z-index: 9999;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.85);
+      color: #fff;
+    }
+    #sidCard{
+      width: min(520px, 92vw);
+      background: rgba(20,20,20,0.92);
+      border: 1px solid rgba(255,255,255,0.18);
+      border-radius: 14px;
+      padding: 18px 16px 14px 16px;
+    }
+    #sidCard h2{ margin: 0 0 10px 0; font-size: 18px; font-weight: 700; }
+    #sidCard p{ margin: 0 0 12px 0; color: rgba(255,255,255,0.8); font-size: 13px; line-height: 1.35; }
+    #sidRow{ display: flex; gap: 10px; }
+    #sidInput{
+      flex: 1;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.2);
+      background: rgba(0,0,0,0.35);
+      color: #fff;
+      font-size: 16px;
+      outline: none;
+    }
+    #sidBtn{
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 0;
+      background: #2f6fed;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 700;
+    }
+    #sidErr{ margin-top: 10px; font-size: 13px; color: #ffb4b4; min-height: 18px; }
+    #tinyHint{
+      position: fixed; left: 12px; bottom: 12px; z-index: 20;
+      color: rgba(255,255,255,0.82); font-size: 12px;
+      background: rgba(0,0,0,0.35); padding: 8px 10px; border-radius: 10px;
+      max-width: 560px;
+    }
+  </style>
+</head>
+
+<body>
+  <!-- 0) 被试序号输入（非沉浸模式） -->
+  <div id="sidOverlay">
+    <div id="sidCard">
+      <h2>Participant ID</h2>
+      <p>请输入被试序号（例如 01 / 12 / A03）。输入完成后，会进入过渡页（黑屏）并等待你点击“开始实验 ⭐”。</p>
+      <div id="sidRow">
+        <input id="sidInput" placeholder="e.g., 01" inputmode="text" autocomplete="off" />
+        <button id="sidBtn">Confirm ⭐</button>
+      </div>
+      <div id="sidErr"></div>
+    </div>
+  </div>
+
+  <div id="tinyHint">提示：若 Quest 端出现旧缓存，请在地址后加 <b>?v=3</b>（例如 experiment_vr.html?v=3）。</div>
+
+  <a-scene
+    background="color: #000"
+    vr-mode-ui="enabled: true"
+    renderer="colorManagement: true; antialias: true"
+    embedded>
+    <a-assets timeout="30000">
+      <video id="vrVideo" preload="auto" crossorigin="anonymous" playsinline webkit-playsinline></video>
+      <audio id="vrAudio" preload="auto" crossorigin="anonymous"></audio>
+    </a-assets>
+
+    <!-- UI 用 flat 材质，但仍加环境光，防止某些浏览器渲染异常 -->
+    <a-entity light="type: ambient; intensity: 1.2"></a-entity>
+
+    <!-- 360 视频球（没有视频时仍显示纯黑） -->
+    <a-videosphere id="sphere" src="#vrVideo" rotation="0 -90 0"></a-videosphere>
+
+    <!-- 相机/光标 + UI 面板 -->
+    <a-entity id="rig">
+      <a-camera position="0 1.6 0">
+        <a-cursor
+          id="gazeCursor"
+          raycaster="objects: .clickable"
+          fuse="false"
+          material="shader: flat; color: #ffffff; opacity: 0.95"
+          geometry="primitive: ring; radiusInner: 0.008; radiusOuter: 0.012">
+        </a-cursor>
+        <a-entity id="uiRoot" position="0 0 -1.7"></a-entity>
+      </a-camera>
+    </a-entity>
+
+    <!-- 控制器激光 -->
+    <a-entity laser-controls="hand: right" raycaster="objects: .clickable; far: 8"></a-entity>
+    <a-entity laser-controls="hand: left"  raycaster="objects: .clickable; far: 8"></a-entity>
+  </a-scene>
+
+  <script>
+    // -----------------------------
+    // 你可以改的配置
+    // -----------------------------
+    const CONFIG = {
+      ordersUrl: './orders_30subs.json',
+      demoVideo: './videodemo.mp4',
+      rotationY: -90,
+
+      // Baseline 规则：
+      // - orders 里如果 video 字段是 "Baseline.mp4"（或包含 "Baseline"），将不会尝试加载视频
+      // - 会尝试播放 trial.audio（或 audioFile / sound 等字段）
+      // - 若没有 audio 字段，会尝试 Baseline.mp3（同名）; 若 mp3 不存在请在 orders 里显式写 audio
+      baselineSeconds: 45,
+      baselineCloseEyesText: '请闭眼听音频\n音频结束后睁眼',
+      baselineCountdownTitle: '请保持睁眼，等待下一段',
+
+      // 量表
+      likertMin: 1,
+      likertMax: 7,
+      questions: [
+        { key: 'Q1', text: '1) Annoyance (烦躁程度)？' },
+        { key: 'Q2', text: '2) Salience (无人机明显程度)？' },
+        { key: 'Q3', text: '3) Comfort (环境/场景舒适度)？' },
+        { key: 'Q4', text: '4) Loudness (强度感受)？' }
+      ]
+    };
+
+    // -----------------------------
+    // 小工具
+    // -----------------------------
+    const $ = (sel) => document.querySelector(sel);
+    const sceneEl = document.querySelector('a-scene');
+    const uiRoot = $('#uiRoot');
+    const sphere = $('#sphere');
+    const videoEl = $('#vrVideo');
+    const audioEl = $('#vrAudio');
+
+    sphere.setAttribute('rotation', `0 ${CONFIG.rotationY} 0`);
+
+    function nowIso() {
+      const d = new Date();
+      const pad = (n) => String(n).padStart(2,'0');
+      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    }
+
+    function downloadJson(obj, filename) {
+      const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function clearEntity(el) { while (el.firstChild) el.removeChild(el.firstChild); }
+
+    function makePanelBackground(parent) {
+      const bg = document.createElement('a-plane');
+      bg.setAttribute('width', '2.6');
+      bg.setAttribute('height', '1.75');
+      bg.setAttribute('color', '#111');
+      bg.setAttribute('opacity', '0.86');
+      bg.setAttribute('position', '0 0 0');
+      bg.setAttribute('material', 'shader: flat; side: double');
+      parent.appendChild(bg);
+
+      const border = document.createElement('a-plane');
+      border.setAttribute('width', '2.66');
+      border.setAttribute('height', '1.81');
+      border.setAttribute('color', '#777');
+      border.setAttribute('opacity', '0.35');
+      border.setAttribute('position', '0 0 -0.001');
+      border.setAttribute('material', 'shader: flat; side: double');
+      parent.appendChild(border);
+    }
+
+    function makeText(parent, text, pos, opts={}) {
+      const t = document.createElement('a-text');
+      t.setAttribute('value', text);
+      t.setAttribute('color', opts.color || '#fff');
+      t.setAttribute('align', opts.align || 'left');
+      t.setAttribute('wrap-count', String(opts.wrap || 30));
+      t.setAttribute('width', String(opts.width || 2.35));
+      t.setAttribute('position', pos);
+      t.setAttribute('baseline', opts.baseline || 'top');
+      parent.appendChild(t);
+      return t;
+    }
+
+    function makeButton(parent, label, pos, onClick, opts={}) {
+      const btn = document.createElement('a-plane');
+      btn.classList.add('clickable');
+      btn.setAttribute('width', opts.width || '1.2');
+      btn.setAttribute('height', opts.height || '0.22');
+      btn.setAttribute('color', opts.color || '#2f6fed');
+      btn.setAttribute('opacity', opts.opacity || '0.98');
+      btn.setAttribute('position', pos);
+      btn.setAttribute('material', 'shader: flat; side: double');
+
+      // hover 时让光标变黄
+      btn.addEventListener('mouseenter', () => {
+        const cur = $('#gazeCursor');
+        if (cur) cur.setAttribute('material', 'shader: flat; color: #ffd400; opacity: 0.98');
+      });
+      btn.addEventListener('mouseleave', () => {
+        const cur = $('#gazeCursor');
+        if (cur) cur.setAttribute('material', 'shader: flat; color: #ffffff; opacity: 0.95');
+      });
+
+      const txt = document.createElement('a-text');
+      txt.setAttribute('value', label);
+      txt.setAttribute('color', '#fff');
+      txt.setAttribute('align', 'center');
+      txt.setAttribute('width', '2');
+      txt.setAttribute('position', '0 0 0.01');
+      txt.setAttribute('baseline', 'center');
+      btn.appendChild(txt);
+
+      btn.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
+      parent.appendChild(btn);
+      return btn;
+    }
+
+    // -----------------------------
+    // orders 解析（尽量兼容）
+    // -----------------------------
+    function normalizeTrials(data) {
+      let arr = null;
+      if (Array.isArray(data)) arr = data;
+      else if (data && Array.isArray(data.trials)) arr = data.trials;
+      else if (data && Array.isArray(data.order)) arr = data.order;
+      else if (data && Array.isArray(data.sequence)) arr = data.sequence;
+      if (!arr) return [];
+
+      return arr.map((t, idx) => {
+        if (typeof t === 'string') return { idx, video: t };
+        const video = t.video || t.videoFile || t.video_file || t.filename || t.file || t.src || t.path || t.mp4;
+        const audio = t.audio || t.audioFile || t.audio_file || t.sound || t.soundFile || t.wav || t.mp3;
+        return { idx, ...t, video, audio };
+      });
+    }
+
+    function isBaselineTrial(trial) {
+      const v = (trial?.video || '').toLowerCase();
+      return v === 'baseline.mp4' || v.includes('baseline');
+    }
+
+    function guessBaselineAudio(trial) {
+      if (trial?.audio) return String(trial.audio);
+      const base = (trial?.video || 'Baseline.mp4').replace(/\.[^/.]+$/, '');
+      return `${base}.mp3`;
+    }
+
+    // -----------------------------
+    // 实验状态
+    // -----------------------------
+    const results = {
+      meta: {
+        participant_id: null,
+        started_at: null,
+        finished_at: null,
+        userAgent: navigator.userAgent
+      },
+      segments: []
+    };
+
+    const state = {
+      phase: 'loading',
+      started: false,
+      pointer: null,                // -1 demo; >=0 trial
+      lastPointerPlayed: null,
+      lastPointerCompleted: null,
+      trials: [],
+      currentTrial: null,
+      answers: {},
+      nextBtn: null,
+      nextEnabled: false,
+      resumeMenuShown: false
+    };
+
+    // -----------------------------
+    // 播放控制
+    // -----------------------------
+    async function stopAllMedia() {
+      try { videoEl.pause(); } catch(e){}
+      try { audioEl.pause(); } catch(e){}
+      try { videoEl.removeAttribute('src'); videoEl.load(); } catch(e){}
+      try { audioEl.removeAttribute('src'); audioEl.load(); } catch(e){}
+    }
+
+    async function playVideo(src) {
+      await stopAllMedia();
+      videoEl.src = src;
+      videoEl.load();
+      await videoEl.play();
+    }
+
+    async function playAudio(src) {
+      await stopAllMedia();
+      audioEl.src = src;
+      audioEl.load();
+      await audioEl.play();
+    }
+
+    // -----------------------------
+    // UI：Loading / Welcome / Resume / Questions
+    // -----------------------------
+    function showLoading(msg) {
+      clearEntity(uiRoot);
+      makePanelBackground(uiRoot);
+      makeText(uiRoot, msg, '-1.2 0.70 0.02');
+    }
+
+    function showWelcomeTransition() {
+      clearEntity(uiRoot);
+      makePanelBackground(uiRoot);
+      makeText(uiRoot, '欢迎进入实验', '-1.2 0.72 0.02', { width: 2.35 });
+      makeText(uiRoot, '请确认已佩戴舒适。\n准备好后，点击下方按钮开始。', '-1.2 0.50 0.02', { width: 2.35 });
+
+      makeButton(uiRoot, '开始实验 ⭐', '0 -0.92 0.02', async () => {
+        if (!state.started) {
+          state.started = true;
+          results.meta.started_at = nowIso();
+        }
+        await playSegment(-1, { force: true });
+      }, { width: '1.6', height: '0.24', color: '#2f6fed' });
+
+      state.phase = 'welcome';
+    }
+
+    function showResumeMenu() {
+      clearEntity(uiRoot);
+      makePanelBackground(uiRoot);
+      makeText(uiRoot, 'Resume Options', '-1.2 0.72 0.02', { width: 2.35 });
+      makeText(uiRoot, 'Choose an option (English):', '-1.2 0.55 0.02', { width: 2.35 });
+
+      makeButton(uiRoot, 'Replay Previous ⏪', '0 -0.20 0.02', async () => {
+        state.resumeMenuShown = false;
+        const p = (state.lastPointerPlayed ?? -1) - 1;
+        await playSegment(p, { force: true, fromResume: true });
+      }, { width: '1.6', height: '0.24', color: '#555' });
+
+      makeButton(uiRoot, 'Play Next ⏩', '0 -0.55 0.02', async () => {
+        state.resumeMenuShown = false;
+        const p = (state.lastPointerPlayed ?? -1) + 1;
+        await playSegment(p, { force: true, fromResume: true });
+      }, { width: '1.6', height: '0.24', color: '#2f6fed' });
+
+      makeButton(uiRoot, 'Close ✖', '0 -0.92 0.02', async () => {
+        state.resumeMenuShown = false;
+        if (state.phase === 'questions') showQuestions();
+        else showLoading('Ready.');
+      }, { width: '1.1', height: '0.20', color: '#444' });
+    }
+
+    function updateNextEnabled() {
+      const ok = CONFIG.questions.every(q => typeof state.answers[q.key] === 'number');
+      if (state.nextBtn) {
+        state.nextBtn.setAttribute('color', ok ? '#2f6fed' : '#444');
+        state.nextBtn.setAttribute('opacity', ok ? '0.98' : '0.65');
+        state.nextEnabled = ok;
+      }
+    }
+
+    function makeLikertRow(parent, q, y) {
+      makeText(parent, q.text, `-1.2 ${y+0.20} 0.02`);
+
+      const min = CONFIG.likertMin, max = CONFIG.likertMax;
+      const count = max - min + 1;
+      const startX = -1.2;
+      const gap = 2.4 / count;
+
+      for (let v = min; v <= max; v++) {
+        const i = v - min;
+        const x = startX + (i + 0.5) * gap;
+
+        const opt = document.createElement('a-plane');
+        opt.classList.add('clickable');
+        opt.setAttribute('width', String(gap * 0.88));
+        opt.setAttribute('height', '0.14');
+        opt.setAttribute('position', `${x} ${y} 0.02`);
+        opt.setAttribute('color', '#333');
+        opt.setAttribute('opacity', '0.98');
+        opt.setAttribute('material', 'shader: flat; side: double');
+        opt.setAttribute('data-q', q.key);
+
+        opt.addEventListener('mouseenter', () => {
+          const cur = $('#gazeCursor');
+          if (cur) cur.setAttribute('material', 'shader: flat; color: #ffd400; opacity: 0.98');
+        });
+        opt.addEventListener('mouseleave', () => {
+          const cur = $('#gazeCursor');
+          if (cur) cur.setAttribute('material', 'shader: flat; color: #ffffff; opacity: 0.95');
+        });
+
+        const txt = document.createElement('a-text');
+        txt.setAttribute('value', String(v));
+        txt.setAttribute('align', 'center');
+        txt.setAttribute('baseline', 'center');
+        txt.setAttribute('color', '#fff');
+        txt.setAttribute('width', '1');
+        txt.setAttribute('position', '0 0 0.01');
+        opt.appendChild(txt);
+
+        opt.addEventListener('click', (e) => {
+          e.stopPropagation();
+          state.answers[q.key] = v;
+          [...parent.querySelectorAll(`[data-q="${q.key}"]`)].forEach(el => el.setAttribute('color', '#333'));
+          opt.setAttribute('color', '#2f6fed');
+          updateNextEnabled();
+        });
+
+        parent.appendChild(opt);
+      }
+    }
+
+    function showQuestions() {
+      clearEntity(uiRoot);
+      makePanelBackground(uiRoot);
+
+      const label = (state.pointer === -1)
+        ? 'Demo'
+        : (state.currentTrial?.label || state.currentTrial?.name || state.currentTrial?.video || `Trial ${state.pointer+1}`);
+
+      makeText(uiRoot, `请作答（${label}）`, '-1.2 0.75 0.02');
+
+      state.answers = {};
+      state.nextBtn = null;
+      state.nextEnabled = false;
+
+      const ys = [0.38, 0.14, -0.10, -0.34];
+      CONFIG.questions.forEach((q, i) => makeLikertRow(uiRoot, q, ys[i]));
+
+      state.nextBtn = makeButton(uiRoot, 'Next ▶', '0 -0.70 0.02', async () => {
+        if (!state.nextEnabled) return;
+
+        results.segments.push({
+          pointer: state.pointer,
+          when: nowIso(),
+          trial: state.pointer >= 0 ? state.currentTrial : { video: CONFIG.demoVideo, label: 'Demo' },
+          answers: { ...state.answers }
+        });
+
+        state.lastPointerCompleted = state.pointer;
+
+        // demo 之后 -> 进入第一个 trial；trial 之后 -> 下一段
+        await playSegment(state.pointer + 1, { force: true });
+      }, { width: '1.1', height: '0.22', color: '#2f6fed' });
+
+      updateNextEnabled();
+      state.phase = 'questions';
+    }
+
+    // -----------------------------
+    // Baseline：闭眼 -> 播音频 -> 倒计时 -> 下一段
+    // -----------------------------
+    function showCloseEyesInstruction() {
+      clearEntity(uiRoot);
+      makePanelBackground(uiRoot);
+      makeText(uiRoot, CONFIG.baselineCloseEyesText, '-1.2 0.72 0.02', { width: 2.35 });
+      makeText(uiRoot, 'Audio will start after you click the button below.', '-1.2 0.48 0.02', { width: 2.35 });
+
+      makeButton(uiRoot, 'Start Audio ⭐', '0 -0.92 0.02', async () => {
+        try {
+          const a = guessBaselineAudio(state.currentTrial);
+          await playAudio(`./${a}`);
+        } catch (e) {
+          showLoading('无法播放 Baseline 音频：' + (e?.message || e));
+        }
+      }, { width: '1.5', height: '0.24', color: '#2f6fed' });
+    }
+
+    function showCountdown(seconds, title, onDone) {
+      clearEntity(uiRoot);
+      makePanelBackground(uiRoot);
+      makeText(uiRoot, title, '-1.2 0.72 0.02', { width: 2.35 });
+
+      const big = makeText(uiRoot, String(seconds), '-0.2 0.18 0.02', { width: 2.0, align: 'center', wrap: 10 });
+      big.setAttribute('scale', '2.0 2.0 2.0');
+
+      let left = seconds;
+      const timer = setInterval(async () => {
+        left -= 1;
+        big.setAttribute('value', String(left));
+        if (left <= 0) {
+          clearInterval(timer);
+          await onDone();
+        }
+      }, 1000);
+    }
+
+    audioEl.addEventListener('ended', async () => {
+      if (state.phase !== 'playing') return;
+      if (!state.currentTrial || !isBaselineTrial(state.currentTrial)) return;
+
+      await stopAllMedia();
+      showCountdown(CONFIG.baselineSeconds, CONFIG.baselineCountdownTitle, async () => {
+        state.lastPointerCompleted = state.pointer;
+        await playSegment(state.pointer + 1, { force: true });
+      });
+    });
+
+    videoEl.addEventListener('ended', () => {
+      if (state.phase === 'playing') {
+        showQuestions();
+      }
+    });
+
+    // -----------------------------
+    // 播放某个 segment（-1 demo; >=0 trial）
+    // -----------------------------
+    async function playSegment(pointer, opts={}) {
+      const maxPtr = state.trials.length - 1;
+      if (pointer < -1) pointer = -1;
+      if (pointer > maxPtr) pointer = maxPtr;
+
+      state.pointer = pointer;
+      state.lastPointerPlayed = pointer;
+      state.resumeMenuShown = false;
+
+      if (pointer >= 0) {
+        state.currentTrial = state.trials[pointer];
+        if (isBaselineTrial(state.currentTrial)) {
+          state.phase = 'playing';
+          await stopAllMedia();
+          showCloseEyesInstruction();
+          return;
+        }
+      } else {
+        state.currentTrial = null;
+      }
+
+      try {
+        state.phase = 'playing';
+        const src = (pointer === -1) ? CONFIG.demoVideo : `./${state.currentTrial.video}`;
+        showLoading(`Loading… ${pointer === -1 ? 'Demo' : state.currentTrial.video}`);
+        await playVideo(src);
+      } catch (e) {
+        showLoading('无法播放视频：' + (e?.message || e));
+      }
+    }
+
+    // -----------------------------
+    // 退出/进入沉浸：弹出“上一段/下一段”选项
+    // -----------------------------
+    sceneEl.addEventListener('exit-vr', async () => {
+      try { videoEl.pause(); } catch(e){}
+      try { audioEl.pause(); } catch(e){}
+    });
+
+    sceneEl.addEventListener('enter-vr', async () => {
+      if (!state.started) return;
+      if (state.lastPointerPlayed === null || state.lastPointerPlayed === undefined) return;
+      if (state.resumeMenuShown) return;
+      state.resumeMenuShown = true;
+      showResumeMenu();
+    });
+
+    // -----------------------------
+    // 初始化：加载 orders
+    // -----------------------------
+    async function loadOrders() {
+      const resp = await fetch(CONFIG.ordersUrl, { cache: 'no-store' });
+      if (!resp.ok) throw new Error(`orders_30subs.json HTTP ${resp.status}`);
+      const data = await resp.json();
+      const trials = normalizeTrials(data);
+
+      const usable = trials.filter(t => typeof t.video === 'string' && t.video.length > 0);
+      if (!usable.length) throw new Error('orders 文件解析失败：未找到 video 字段');
+
+      return usable;
+    }
+
+    function getSidFromUrl() {
+      const u = new URL(location.href);
+      return u.searchParams.get('sid');
+    }
+
+    async function init() {
+      showLoading('正在加载 orders_30subs.json…');
+      try {
+        state.trials = await loadOrders();
+        showLoading('orders 已加载。请先输入被试序号。');
+      } catch (e) {
+        showLoading('无法读取 orders_30subs.json：' + (e?.message || e));
+      }
+    }
+
+    // -----------------------------
+    // 被试序号输入逻辑
+    // -----------------------------
+    const sidOverlay = $('#sidOverlay');
+    const sidInput = $('#sidInput');
+    const sidBtn = $('#sidBtn');
+    const sidErr = $('#sidErr');
+
+    function confirmSid() {
+      const sid = (sidInput.value || '').trim();
+      if (!sid) {
+        sidErr.textContent = '请输入被试序号。';
+        return;
+      }
+      results.meta.participant_id = sid;
+      sidOverlay.style.display = 'none';
+      showWelcomeTransition();
+    }
+
+    sidBtn.addEventListener('click', confirmSid);
+    sidInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirmSid(); });
+
+    const sidFromUrl = getSidFromUrl();
+    if (sidFromUrl) {
+      sidInput.value = sidFromUrl;
+      setTimeout(() => { confirmSid(); }, 50);
+    }
+
+    init();
+  </script>
+</body>
+</html>
