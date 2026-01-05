@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VR 全景声音实验（A-Frame 版）</title>
+  <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
+  <style>
+    html, body { height: 100%; margin: 0; background: #000; }
+    /* 仅用于非VR模式下的提示（进入VR后不依赖DOM） */
+    #fallbackHint{
+      position: fixed; left: 12px; bottom: 12px; z-index: 10;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      color: rgba(255,255,255,0.85); font-size: 13px;
+      background: rgba(0,0,0,0.45); padding: 10px 12px; border-radius: 10px;
+      max-width: 560px;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="fallbackHint">
+    说明：这是一个用于 Quest “沉浸式 360 播放 + 3D 量表” 的最小可用版本。<br>
+    进入页面后：先点 VR 面板里的“开始”，然后可点右下角 Enter VR 进入沉浸模式。
+  </div>
+
+  <a-scene
+    background="color: #000"
+    renderer="antialias: true; colorManagement: true"
+    vr-mode-ui="enabled: true"
+    embedded>
+    <a-assets timeout="30000">
+      <video
+        id="vrVideo"
+        preload="auto"
+        crossorigin="anonymous"
+        playsinline
+        webkit-playsinline
+      ></video>
+    </a-assets>
+
+    <!-- 360 equirect 视频贴到球内侧 -->
+    <a-videosphere id="sphere" src="#vrVideo" rotation="0 -90 0"></a-videosphere>
+
+    <!-- 相机 + 光标（桌面/手机） -->
+    <a-entity id="rig">
+      <a-camera position="0 1.6 0">
+        <a-cursor
+          id="gazeCursor"
+          raycaster="objects: .clickable"
+          fuse="false"
+          material="color: white; opacity: 0.9"
+          geometry="primitive: ring; radiusInner: 0.008; radiusOuter: 0.012">
+        </a-cursor>
+
+        <!-- UI 面板（跟随相机，进入VR也可见） -->
+        <a-entity id="uiRoot" position="0 0 -1.8"></a-entity>
+      </a-camera>
+    </a-entity>
+
+    <!-- 控制器激光（Quest） -->
+    <a-entity laser-controls="hand: right" raycaster="objects: .clickable; far: 6"></a-entity>
+    <a-entity laser-controls="hand: left"  raycaster="objects: .clickable; far: 6"></a-entity>
+  </a-scene>
+
+  <script>
+    // -----------------------------
+    // 可配置项
+    // -----------------------------
+    const CONFIG = {
+      ordersUrl: './orders_30subs.json',   // 你的最终 order 文件
+      demoVideo: './videodemo.mp4',        // 你的 demo
+      rotationY: -90,                      // 视角对准（如不对可改为 0 / -90 / 90 / 180）
+      likertMin: 1,
+      likertMax: 7,
+      questions: [
+        { key: 'Q1', text: '1) 你对刚刚的声音有多烦躁/反感？' },
+        { key: 'Q2', text: '2) 你觉得无人机声音有多明显？' },
+        { key: 'Q3', text: '3) 你觉得当前环境音/场景有多舒适？' },
+        { key: 'Q4', text: '4) 你对刚刚的声音强度感受如何？' }
+      ]
+    };
+
+    // -----------------------------
+    // 工具函数
+    // -----------------------------
+    const $ = (sel) => document.querySelector(sel);
+
+    function nowIso() {
+      const d = new Date();
+      const pad = (n) => String(n).padStart(2,'0');
+      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    }
+
+    function downloadJson(obj, filename) {
+      const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    // 从 orders_30subs.json 尽可能兼容地抽取 trial 列表
+    function normalizeTrials(data) {
+      let arr = null;
+      if (Array.isArray(data)) arr = data;
+      else if (data && Array.isArray(data.trials)) arr = data.trials;
+      else if (data && Array.isArray(data.order)) arr = data.order;
+      else if (data && Array.isArray(data.sequence)) arr = data.sequence;
+
+      if (!arr) return [];
+
+      // 允许 trial 是字符串（直接是视频文件名），或对象（包含 video 字段等）
+      return arr.map((t, idx) => {
+        if (typeof t === 'string') return { idx, video: t };
+        const video =
+          t.video || t.videoFile || t.video_file || t.filename || t.file || t.src || t.path || t.mp4;
+        return { idx, ...t, video };
+      }).filter(t => !!t.video);
+    }
+
+    // -----------------------------
+    // A-Frame UI 构建
+    // -----------------------------
+    function clearEntity(el) {
+      while (el.firstChild) el.removeChild(el.firstChild);
+    }
+
+    function makePanelBackground(parent) {
+      const bg = document.createElement('a-plane');
+      bg.setAttribute('width', '2.4');
+      bg.setAttribute('height', '1.55');
+      bg.setAttribute('color', '#111');
+      bg.setAttribute('opacity', '0.82');
+      bg.setAttribute('position', '0 0 0');
+      bg.setAttribute('material', 'shader: standard; metalness: 0; roughness: 1');
+      parent.appendChild(bg);
+    }
+
+    function makeText(parent, text, pos, size=0.06, align='left') {
+      const t = document.createElement('a-text');
+      t.setAttribute('value', text);
+      t.setAttribute('color', '#fff');
+      t.setAttribute('align', align);
+      t.setAttribute('wrap-count', '28');
+      t.setAttribute('width', '2.2');
+      t.setAttribute('position', pos);
+      t.setAttribute('baseline', 'top');
+      t.setAttribute('shader', 'msdf');
+      t.setAttribute('negate', 'false');
+      // A-Frame 1.7 默认 text 组件对 msdf 支持取决于浏览器；如显示异常可删掉 shader 设置
+      t.setAttribute('scale', `${size} ${size} ${size}`);
+      parent.appendChild(t);
+      return t;
+    }
+
+    function makeButton(parent, label, pos, onClick) {
+      const btn = document.createElement('a-plane');
+      btn.classList.add('clickable');
+      btn.setAttribute('width', '0.8');
+      btn.setAttribute('height', '0.18');
+      btn.setAttribute('color', '#2b2b2b');
+      btn.setAttribute('opacity', '0.95');
+      btn.setAttribute('position', pos);
+      btn.setAttribute('material', 'shader: standard; metalness: 0.1; roughness: 0.9');
+      btn.setAttribute('event-set__enter', '_event: mouseenter; color: #3b3b3b');
+      btn.setAttribute('event-set__leave', '_event: mouseleave; color: #2b2b2b');
+      // 文本
+      const txt = document.createElement('a-text');
+      txt.setAttribute('value', label);
+      txt.setAttribute('color', '#fff');
+      txt.setAttribute('align', 'center');
+      txt.setAttribute('width', '1.2');
+      txt.setAttribute('position', '0 -0.01 0.01');
+      txt.setAttribute('baseline', 'center');
+      btn.appendChild(txt);
+
+      btn.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
+      parent.appendChild(btn);
+      return btn;
+    }
+
+    function makeLikertRow(parent, q, y, state) {
+      // 问题文本
+      makeText(parent, q.text, `-1.06 ${y+0.18} 0.02`, 0.055, 'left');
+
+      // 选项按钮
+      const min = CONFIG.likertMin, max = CONFIG.likertMax;
+      const count = max - min + 1;
+      const startX = -1.06;
+      const gap = 2.12 / count;
+      for (let v = min; v <= max; v++) {
+        const i = v - min;
+        const x = startX + (i + 0.5) * gap;
+        const opt = document.createElement('a-plane');
+        opt.classList.add('clickable');
+        opt.setAttribute('width', String(gap * 0.88));
+        opt.setAttribute('height', '0.12');
+        opt.setAttribute('position', `${x} ${y} 0.02`);
+        opt.setAttribute('color', '#242424');
+        opt.setAttribute('material', 'shader: standard; metalness: 0.08; roughness: 0.9');
+
+        const txt = document.createElement('a-text');
+        txt.setAttribute('value', String(v));
+        txt.setAttribute('align', 'center');
+        txt.setAttribute('baseline', 'center');
+        txt.setAttribute('color', '#fff');
+        txt.setAttribute('width', '0.6');
+        txt.setAttribute('position', '0 0 0.01');
+        opt.appendChild(txt);
+
+        opt.addEventListener('click', (e) => {
+          e.stopPropagation();
+          state.answers[q.key] = v;
+          // 高亮当前选中
+          [...parent.querySelectorAll(`[data-q="${q.key}"]`)].forEach(el => el.setAttribute('color', '#242424'));
+          opt.setAttribute('color', '#4a4a4a');
+          updateNextEnabled(state);
+        });
+        opt.setAttribute('data-q', q.key);
+        parent.appendChild(opt);
+      }
+    }
+
+    function updateNextEnabled(state) {
+      const ok = CONFIG.questions.every(q => typeof state.answers[q.key] === 'number');
+      if (state.nextBtn) {
+        state.nextBtn.setAttribute('color', ok ? '#2b2b2b' : '#1a1a1a');
+        state.nextBtn.setAttribute('opacity', ok ? '0.95' : '0.6');
+        state.nextEnabled = ok;
+      }
+    }
+
+    // -----------------------------
+    // 实验状态机
+    // -----------------------------
+    const sphere = $('#sphere');
+    sphere.setAttribute('rotation', `0 ${CONFIG.rotationY} 0`);
+
+    const videoEl = $('#vrVideo');
+    let trials = [];
+    const results = {
+      meta: { started_at: null, finished_at: null, userAgent: navigator.userAgent },
+      trials: []
+    };
+
+    const uiRoot = $('#uiRoot');
+    const state = {
+      phase: 'loading',  // loading | ready | playing | questions | finished
+      trialIndex: -1,
+      currentTrial: null,
+      answers: {},
+      nextBtn: null,
+      nextEnabled: false
+    };
+
+    // 进入“播放视频”
+    async function playVideo(src) {
+      // 重要：Quest 通常要求用户手势触发 play()
+      videoEl.pause();
+      videoEl.removeAttribute('src');
+      videoEl.load();
+
+      videoEl.src = src;
+      videoEl.load();
+      await videoEl.play();
+    }
+
+    function showLoading(msg) {
+      clearEntity(uiRoot);
+      makePanelBackground(uiRoot);
+      makeText(uiRoot, msg, '-1.06 0.65 0.02', 0.06);
+    }
+
+    function showStart() {
+      clearEntity(uiRoot);
+      makePanelBackground(uiRoot);
+      makeText(uiRoot, 'VR 全景声音实验', '-1.06 0.65 0.02', 0.075);
+      makeText(uiRoot, '1) 点击“开始”播放 demo；\n2) 右下角可点 Enter VR 进入沉浸；\n3) 每段视频结束后会出现 4 个问题。', '-1.06 0.43 0.02', 0.055);
+
+      makeButton(uiRoot, '开始', '0 -0.55 0.02', async () => {
+        try {
+          results.meta.started_at = nowIso();
+          state.phase = 'playing';
+          showLoading('正在播放 demo…');
+          await playVideo(CONFIG.demoVideo);
+        } catch (e) {
+          showLoading('无法播放 demo：' + (e?.message || e));
+        }
+      });
+    }
+
+    function showQuestions() {
+      clearEntity(uiRoot);
+      makePanelBackground(uiRoot);
+
+      const trialLabel = state.currentTrial?.label || state.currentTrial?.name || state.currentTrial?.video || `Trial ${state.trialIndex+1}`;
+      makeText(uiRoot, `请作答（${trialLabel}）`, '-1.06 0.67 0.02', 0.06);
+
+      state.answers = {};
+      state.nextBtn = null;
+      state.nextEnabled = false;
+
+      // 四个问题（从上到下）
+      const ys = [0.35, 0.12, -0.11, -0.34];
+      CONFIG.questions.forEach((q, i) => makeLikertRow(uiRoot, q, ys[i], state));
+
+      state.nextBtn = makeButton(uiRoot, '下一段', '0 -0.62 0.02', async () => {
+        if (!state.nextEnabled) return;
+        // 保存回答
+        results.trials.push({
+          index: state.trialIndex,
+          video: state.currentTrial.video,
+          trial: state.currentTrial,
+          answers: { ...state.answers },
+          answered_at: nowIso()
+        });
+        // 下一段
+        await nextTrial();
+      });
+      updateNextEnabled(state);
+    }
+
+    async function nextTrial() {
+      // 如果没有更多 trial
+      if (state.trialIndex + 1 >= trials.length) {
+        state.phase = 'finished';
+        results.meta.finished_at = nowIso();
+        clearEntity(uiRoot);
+        makePanelBackground(uiRoot);
+        makeText(uiRoot, '实验结束，谢谢参与！', '-1.06 0.65 0.02', 0.075);
+        makeText(uiRoot, '结果已准备下载（JSON）。如未自动下载，请点击“下载结果”。', '-1.06 0.43 0.02', 0.055);
+
+        makeButton(uiRoot, '下载结果', '0 -0.55 0.02', () => {
+          const fn = `vr_experiment_${new Date().toISOString().replace(/[:.]/g,'-')}.json`;
+          downloadJson(results, fn);
+        });
+
+        // 自动下载一次（大多数浏览器允许）
+        try {
+          const fn = `vr_experiment_${new Date().toISOString().replace(/[:.]/g,'-')}.json`;
+          downloadJson(results, fn);
+        } catch (e) {}
+        return;
+      }
+
+      // 开始下一 trial
+      state.trialIndex += 1;
+      state.currentTrial = trials[state.trialIndex];
+      state.phase = 'playing';
+      showLoading(`正在播放：${state.currentTrial.video}`);
+
+      try {
+        await playVideo(`./${state.currentTrial.video}`.replace(/^\.\.\//,'./'));
+      } catch (e) {
+        // 如果播放失败，把错误显示出来
+        showLoading(`无法播放：${state.currentTrial.video}\n${(e?.message || e)}`);
+      }
+    }
+
+    // 事件：视频播放结束 -> 出题
+    videoEl.addEventListener('ended', () => {
+      if (state.phase === 'playing') {
+        state.phase = 'questions';
+        showQuestions();
+      }
+    });
+
+    // 进入页面：加载 orders
+    (async function init() {
+      showLoading('正在加载 orders_30subs.json…');
+      try {
+        const resp = await fetch(CONFIG.ordersUrl, { cache: 'no-store' });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        trials = normalizeTrials(data);
+        if (!trials.length) throw new Error('orders 文件解析失败：未找到 trials/video 字段');
+        state.phase = 'ready';
+        showStart();
+      } catch (e) {
+        showLoading('无法读取 orders_30subs.json：' + (e?.message || e) + '\n请确认文件在同目录且可访问。');
+      }
+    })();
+  </script>
+</body>
+</html>
