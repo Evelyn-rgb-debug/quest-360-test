@@ -829,14 +829,26 @@
 
         setStatus("Loading video: " + fileName);
 
+
         videoEl.onerror = () => {
+          const err = videoEl.error;
+          console.error("Video error object:", err);
+
+          let extra = "";
+          if (err) {
+            extra = " (error code: " + err.code + ")";
+          }
+
           alert(
-            "Cannot load video file: " +
+            "Cannot load or decode video file: " +
               fileName +
-              "\nPlease check that the mp4 file exists and the name matches orders_30subs.json."
+              extra +
+              "\nPlease open the browser DevTools > Network panel to check the status of this file."
           );
-          setStatus("Failed to load video: " + fileName);
+          setStatus("Failed to load video: " + fileName + extra);
         };
+
+
 
         videoEl.oncanplay = () => {
           setStatus("Video can play: " + fileName);
