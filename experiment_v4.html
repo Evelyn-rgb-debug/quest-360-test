@@ -4,15 +4,12 @@
     <meta charset="utf-8" />
     <title>VR Spatial Audio Experiment (video + rest + exit)</title>
     <meta
-      name="description"
-      content="360 video experiment with per-trial black rest screen, countdown, and in-VR exit button."
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
     />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <!-- A-Frame core -->
-    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-    <!-- Optional: controller support, if needed -->
-    <script src="https://aframe.io/releases/1.5.0/aframe-extras.min.js"></script>
+    <!-- A-Frame core (same major version as your original file) -->
+    <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
 
     <style>
       body {
@@ -22,7 +19,6 @@
         font-family: Arial, Helvetica, sans-serif;
       }
 
-      /* Desktop overlay: start instructions */
       #startBox,
       #tapToPlay {
         position: absolute;
@@ -59,7 +55,6 @@
         font-size: 14px;
       }
 
-      /* Desktop "Exit VR" button */
       #exitVrHtmlBtn {
         position: absolute;
         right: 16px;
@@ -75,7 +70,6 @@
         display: none;
       }
 
-      /* Bottom status bar */
       #status {
         position: absolute;
         left: 0;
@@ -91,7 +85,7 @@
     </style>
   </head>
   <body>
-    <!-- 360 video + audio elements -->
+    <!-- Media elements -->
     <video
       id="video"
       crossorigin="anonymous"
@@ -101,7 +95,6 @@
       style="display: none"
     ></video>
 
-    <!-- Baseline audio (optional) -->
     <audio
       id="baselineAudio"
       crossorigin="anonymous"
@@ -109,7 +102,6 @@
       style="display: none"
     ></audio>
 
-    <!-- Desktop tap-to-play overlay -->
     <div id="tapToPlay">
       <h2>Tap to enable playback</h2>
       <p>
@@ -119,37 +111,40 @@
       <button id="tapPlayBtn">Tap to play</button>
     </div>
 
-    <!-- Start box (desktop mode only) -->
     <div id="startBox">
       <h2>Start experiment</h2>
       <p>
         The page will play videos according to <b>orders_30subs.json</b>.<br />
         After each video, a black rest screen with a 45-second countdown will
         appear in VR.<br />
-        During this time, please answer the questionnaire on the web page and
-        rest if needed.
+        During this time, please answer the questionnaire and rest.
       </p>
       <button id="startBtn">OK</button>
     </div>
 
-    <!-- Desktop "Exit VR" button (useful after leaving immersive mode) -->
-    <button id="exitVrHtmlBtn" onclick="document.querySelector('a-scene').exitVR();">
+    <button
+      id="exitVrHtmlBtn"
+      onclick="document.querySelector('a-scene').exitVR();"
+    >
       Exit VR
     </button>
 
-    <!-- Bottom status bar (mainly for debugging) -->
     <div id="status">Status: waiting for orders_30subs.json to load…</div>
 
-    <!-- A-Frame scene -->
     <a-scene
       id="scene"
-      embedded
       background="color: #000000"
       vr-mode-ui="enabled: true"
-      device-set="maxPixelRatio: 2.0"
       renderer="antialias: true; colorManagement: true;"
     >
-      <!-- Sky sphere for 360 video -->
+      <!-- Simple lights so all panels / buttons are visible -->
+      <a-entity light="type: ambient; color: #ffffff; intensity: 1.0"></a-entity>
+      <a-entity
+        light="type: directional; color: #ffffff; intensity: 0.4"
+        position="0 2 1"
+      ></a-entity>
+
+      <!-- 360 video sphere -->
       <a-videosphere
         id="sphere"
         src="#video"
@@ -164,7 +159,6 @@
           wasd-controls-enabled="false"
           look-controls="pointerLockEnabled: true"
         >
-          <!-- Gaze cursor (yellow ring, with fuse) -->
           <a-entity
             cursor="rayOrigin: entity; fuse: true; fuseTimeout: 800"
             position="0 0 -1"
@@ -177,7 +171,7 @@
         </a-camera>
       </a-entity>
 
-      <!-- Rest panel (black screen with text + countdown / next tip / end tip) -->
+      <!-- Rest panel (black screen + text + countdown / next / end) -->
       <a-entity
         id="restPanel"
         position="0 1.6 -2"
@@ -187,11 +181,9 @@
           id="restBg"
           width="2.4"
           height="1.6"
-          color="#000000"
-          opacity="0.98"
+          material="color: #000000; shader: flat; opacity: 0.98"
         ></a-plane>
 
-        <!-- Main text line -->
         <a-text
           id="restMain"
           value="Please answer the questions and rest."
@@ -201,7 +193,6 @@
           position="0 0.35 0.02"
         ></a-text>
 
-        <!-- Countdown line -->
         <a-text
           id="restCountdown"
           value="45 s"
@@ -212,7 +203,7 @@
         ></a-text>
       </a-entity>
 
-      <!-- Welcome panel shown after participant ID is entered -->
+      <!-- Welcome panel (after participant ID is entered) -->
       <a-entity
         id="welcomePanel"
         position="0 1.6 -2"
@@ -222,8 +213,7 @@
           id="welcomeBg"
           width="2.2"
           height="1.4"
-          color="#000000"
-          opacity="0.98"
+          material="color: #000000; shader: flat; opacity: 0.98"
         ></a-plane>
 
         <a-text
@@ -244,7 +234,7 @@
           position="0 0.05 0.02"
         ></a-text>
 
-        <!-- Start experiment button (placed lower to avoid accidental hits) -->
+        <!-- Start experiment button (lower position, avoid accidental hit) -->
         <a-entity
           id="welcomeStartBtn"
           class="clickable"
@@ -254,8 +244,7 @@
             id="welcomeStartPlane"
             width="1.1"
             height="0.2"
-            color="#ffffff"
-            opacity="0.95"
+            material="color: #ffffff; shader: flat; opacity: 0.95"
           ></a-plane>
           <a-text
             value="Start experiment"
@@ -267,7 +256,7 @@
         </a-entity>
       </a-entity>
 
-      <!-- Resume options panel when re-entering VR after exit -->
+      <!-- Resume options panel when re-entering VR -->
       <a-entity
         id="resumePanel"
         position="0 1.6 -2"
@@ -277,8 +266,7 @@
           id="resumeBg"
           width="2.2"
           height="1.4"
-          color="#000000"
-          opacity="0.98"
+          material="color: #000000; shader: flat; opacity: 0.98"
         ></a-plane>
 
         <a-text
@@ -309,8 +297,7 @@
             id="resumePrevPlane"
             width="1.0"
             height="0.2"
-            color="#ffffff"
-            opacity="0.95"
+            material="color: #ffffff; shader: flat; opacity: 0.95"
           ></a-plane>
           <a-text
             value="Play previous video"
@@ -331,8 +318,7 @@
             id="resumeNextPlane"
             width="1.0"
             height="0.2"
-            color="#ffffff"
-            opacity="0.95"
+            material="color: #ffffff; shader: flat; opacity: 0.95"
           ></a-plane>
           <a-text
             value="Play next video"
@@ -344,15 +330,14 @@
         </a-entity>
       </a-entity>
 
-      <!-- 3D Exit VR button (front-bottom, in English "Exit VR") -->
+      <!-- 3D Exit VR button -->
       <a-entity id="exitBtn3D" position="0 0.9 -1.2" visible="false">
         <a-plane
           id="exitPlane"
           class="clickable"
           width="0.8"
           height="0.2"
-          color="#ffffff"
-          opacity="0.95"
+          material="color: #ffffff; shader: flat; opacity: 0.95"
         ></a-plane>
         <a-text
           value="Exit VR"
@@ -368,14 +353,14 @@
       /************* 0. Constants *************/
       const ORDER_FILE = "orders_30subs.json";
       const BASELINE_MP3_DEFAULT = "baseline.mp3";
-      const REST_SECONDS = 45; // Rest time (s) after each video
-      const NEXT_WAIT_MS = 2000; // Duration for "Next video (x/N)" message (ms)
+      const REST_SECONDS = 45;
+      const NEXT_WAIT_MS = 2000;
 
-      /************* 1. State variables *************/
+      /************* 1. State *************/
       let participantId = null;
       let ordersAll = null;
       let sequenceItems = [];
-      let currentTrialIndex = -1; // 0-based index of the current trial
+      let currentTrialIndex = -1;
 
       const sceneEl = document.getElementById("scene");
       const videoEl = document.getElementById("video");
@@ -412,7 +397,7 @@
 
       const exitVrHtmlBtn = document.getElementById("exitVrHtmlBtn");
 
-      /************* 2. Utility functions *************/
+      /************* 2. Utils *************/
       function setStatus(msg) {
         console.log("[Status]", msg);
         if (statusEl) statusEl.textContent = "Status: " + msg;
@@ -429,9 +414,9 @@
         tapToPlay.style.display = "none";
       }
 
-      /************* 3. Playback control (video & audio) *************/
+      /************* 3. Playback helpers *************/
       async function tryPlayVideo(reason) {
-        // Do not auto-play if a UI panel is visible (rest / welcome / resume)
+        // Do not auto-play if any panel is visible
         if (
           (restPanel && restPanel.getAttribute("visible")) ||
           (welcomePanel && welcomePanel.getAttribute("visible")) ||
@@ -440,10 +425,7 @@
           setStatus("Skip auto-play because a panel is visible.");
           return false;
         }
-
-        if (!videoEl || (!videoEl.src && !videoEl.currentSrc)) {
-          return false;
-        }
+        if (!videoEl || (!videoEl.src && !videoEl.currentSrc)) return false;
 
         try {
           const p = videoEl.play();
@@ -454,7 +436,7 @@
           setStatus("Playing: " + (videoEl.currentSrc || videoEl.src || ""));
           return true;
         } catch (err) {
-          console.warn("video play() was blocked or failed:", err);
+          console.warn("video play() blocked/failed:", err);
           showTapToPlay(reason || "play() was blocked");
           return false;
         }
@@ -476,13 +458,12 @@
           );
           return true;
         } catch (err) {
-          console.warn("Baseline audio play() was blocked or failed:", err);
+          console.warn("baseline play() blocked/failed:", err);
           showTapToPlay(reason || "baseline play() was blocked");
           return false;
         }
       }
 
-      // Show the welcome panel inside VR (before the first demo video)
       function showWelcomePanel() {
         if (!welcomePanel) return;
 
@@ -501,12 +482,10 @@
         setStatus("Welcome panel shown. Use the yellow ring to start.");
       }
 
-      // Hide the welcome panel
       function hideWelcomePanel() {
         if (welcomePanel) welcomePanel.setAttribute("visible", false);
       }
 
-      // Show the resume options (previous / next video) after re-entering VR
       function showResumeMenu() {
         if (!resumePanel) return;
 
@@ -518,7 +497,7 @@
         } catch (e) {}
 
         if (restPanel) restPanel.setAttribute("visible", false);
-        if (welcomePanel) welcomePanel.setAttribute("visible", false);
+        hideWelcomePanel();
 
         resumePanel.setAttribute("visible", true);
         if (exitBtn3D) exitBtn3D.setAttribute("visible", true);
@@ -526,13 +505,11 @@
         setStatus("Showing resume options (previous / next video).");
       }
 
-      // Hide the resume options panel
       function hideResumeMenu() {
         if (resumePanel) resumePanel.setAttribute("visible", false);
       }
 
-      // When entering VR, either show resume menu (if we left before)
-      // or try to recover playback if appropriate.
+      /************* 4. Scene events *************/
       sceneEl.addEventListener("enter-vr", () => {
         setStatus("Entered immersive mode.");
         if (hasStartedExperiment && showResumeMenuNextEnter) {
@@ -543,8 +520,20 @@
         tryPlayVideo("enter-vr");
       });
 
-      // When the tab becomes visible again, try to resume playback
-      // (tryPlayVideo itself will skip if a panel is visible).
+      sceneEl.addEventListener("exit-vr", () => {
+        setStatus("Exited immersive mode.");
+        if (hasStartedExperiment && sequenceItems && sequenceItems.length > 0) {
+          showResumeMenuNextEnter = true;
+          try {
+            videoEl.pause();
+          } catch (e) {}
+          try {
+            baselineAudio.pause();
+          } catch (e) {}
+          clearRestTimer();
+        }
+      });
+
       document.addEventListener("visibilitychange", () => {
         if (!document.hidden) {
           tryPlayVideo("visibilitychange");
@@ -555,7 +544,11 @@
         tapPlayBtn.addEventListener("click", () => {
           setStatus("User tapped to enable playback.");
           hideTapToPlay();
-          if (baselineAudio && baselineAudio.paused === false) {
+          if (
+            baselineAudio &&
+            baselineAudio.src &&
+            baselineAudio.paused === false
+          ) {
             tryPlayBaseline("tap-click");
           } else {
             tryPlayVideo("tap-click");
@@ -563,28 +556,32 @@
         });
       }
 
-      /************* 4. VR buttons and exit / resume logic *************/
-      // 3D Exit VR button (at the bottom of the view)
+      /************* 5. VR buttons *************/
       if (exitPlane) {
         exitPlane.addEventListener("mouseenter", () => {
-          exitPlane.setAttribute("color", "#ff9800");
+          exitPlane.setAttribute("material", "color: #ff9800; shader: flat");
         });
         exitPlane.addEventListener("mouseleave", () => {
-          exitPlane.setAttribute("color", "#ffffff");
+          exitPlane.setAttribute("material", "color: #ffffff; shader: flat");
         });
         exitPlane.addEventListener("click", () => {
           sceneEl.exitVR();
-          setStatus("Requested to exit immersive mode (Exit VR button).");
+          setStatus("Requested to exit immersive mode (Exit VR).");
         });
       }
 
-      // Welcome "Start experiment" button (gaze-activated)
       if (welcomeStartBtn && welcomeStartPlane) {
         welcomeStartBtn.addEventListener("mouseenter", () => {
-          welcomeStartPlane.setAttribute("color", "#ff9800");
+          welcomeStartPlane.setAttribute(
+            "material",
+            "color: #ff9800; shader: flat"
+          );
         });
         welcomeStartBtn.addEventListener("mouseleave", () => {
-          welcomeStartPlane.setAttribute("color", "#ffffff");
+          welcomeStartPlane.setAttribute(
+            "material",
+            "color: #ffffff; shader: flat"
+          );
         });
         welcomeStartBtn.addEventListener("click", () => {
           if (!sequenceItems || sequenceItems.length === 0) {
@@ -603,13 +600,18 @@
         });
       }
 
-      // Resume panel: "Play previous video"
       if (resumePrevBtn && resumePrevPlane) {
         resumePrevBtn.addEventListener("mouseenter", () => {
-          resumePrevPlane.setAttribute("color", "#ff9800");
+          resumePrevPlane.setAttribute(
+            "material",
+            "color: #ff9800; shader: flat"
+          );
         });
         resumePrevBtn.addEventListener("mouseleave", () => {
-          resumePrevPlane.setAttribute("color", "#ffffff");
+          resumePrevPlane.setAttribute(
+            "material",
+            "color: #ffffff; shader: flat"
+          );
         });
         resumePrevBtn.addEventListener("click", () => {
           if (!sequenceItems || sequenceItems.length === 0) {
@@ -626,13 +628,18 @@
         });
       }
 
-      // Resume panel: "Play next video"
       if (resumeNextBtn && resumeNextPlane) {
         resumeNextBtn.addEventListener("mouseenter", () => {
-          resumeNextPlane.setAttribute("color", "#ff9800");
+          resumeNextPlane.setAttribute(
+            "material",
+            "color: #ff9800; shader: flat"
+          );
         });
         resumeNextBtn.addEventListener("mouseleave", () => {
-          resumeNextPlane.setAttribute("color", "#ffffff");
+          resumeNextPlane.setAttribute(
+            "material",
+            "color: #ffffff; shader: flat"
+          );
         });
         resumeNextBtn.addEventListener("click", () => {
           if (!sequenceItems || sequenceItems.length === 0) {
@@ -655,22 +662,7 @@
         });
       }
 
-      // When leaving VR, pause media and prepare to show resume options
-      sceneEl.addEventListener("exit-vr", () => {
-        setStatus("Exited immersive mode.");
-        if (hasStartedExperiment && sequenceItems && sequenceItems.length > 0) {
-          showResumeMenuNextEnter = true;
-          try {
-            videoEl.pause();
-          } catch (e) {}
-          try {
-            baselineAudio.pause();
-          } catch (e) {}
-          clearRestTimer();
-        }
-      });
-
-      /************* 5. Load orders_30subs.json and choose participant ID *************/
+      /************* 6. Load orders_30subs.json *************/
       async function initOrder() {
         try {
           setStatus("Loading " + ORDER_FILE + " ...");
@@ -703,7 +695,9 @@
           const pObj =
             orders.find((item) => item.participant === pid) || orders[pid - 1];
           if (!pObj || !Array.isArray(pObj.sequence)) {
-            alert("Sequence for this participant was not found in orders_30subs.json.");
+            alert(
+              "Sequence for this participant was not found in orders_30subs.json."
+            );
             setStatus("Sequence not found for this participant.");
             return;
           }
@@ -733,7 +727,6 @@
 
       window.addEventListener("load", initOrder);
 
-      // Desktop "Start" button => only closes overlay and (re)shows welcome panel
       if (startBtn) {
         startBtn.addEventListener("click", () => {
           if (!sequenceItems || sequenceItems.length === 0) {
@@ -747,7 +740,7 @@
         });
       }
 
-      /************* 6. Trial playback sequence *************/
+      /************* 7. Trial playback *************/
       function clearRestTimer() {
         if (restTimerId) {
           clearInterval(restTimerId);
@@ -758,13 +751,11 @@
       function playTrial(index) {
         const total = sequenceItems.length;
         if (index < 0 || index >= total) {
-          // All trials have been played; show final end screen.
           showRestEnd();
           return;
         }
         currentTrialIndex = index;
 
-        // Hide any panels and the 3D Exit button while playing
         if (restPanel) restPanel.setAttribute("visible", false);
         hideWelcomePanel();
         hideResumeMenu();
@@ -777,39 +768,31 @@
           return;
         }
 
-        // If you have "type" field to distinguish baseline vs video
-        if (seqItem.type === "baselineAudio") {
-          playBaselineTrial(seqItem);
-        } else if (seqItem.type === "video") {
-          playVideoTrial(seqItem);
-        } else {
-          // By default, treat as video
-          if (seqItem.file) {
-            playVideoTrial(seqItem);
-          } else {
-            console.warn(
-              'This trial does not have a "file" field; skipping to the next one:',
-              seqItem
-            );
-            playTrial(index + 1);
-          }
-        }
-      }
+        const fileName = seqItem.file || "";
+        const lower = fileName.toLowerCase();
+        const isAudio =
+          lower.endsWith(".mp3") ||
+          lower.endsWith(".wav") ||
+          seqItem.type === "baselineAudio";
 
-      /************* 6.1 Video trial *************/
-      function playVideoTrial(seqItem) {
-        const fileName = seqItem.file;
         if (!fileName) {
-          playTrial(currentTrialIndex + 1);
+          setStatus("This trial has no file. Skipping to the next one.");
+          playTrial(index + 1);
           return;
         }
 
-        // Stop baseline audio if any
+        if (isAudio) {
+          playBaselineTrial(seqItem, fileName);
+        } else {
+          playVideoTrial(seqItem, fileName);
+        }
+      }
+
+      function playVideoTrial(seqItem, fileName) {
         try {
           baselineAudio.pause();
         } catch (e) {}
 
-        // Set video source and show sphere
         videoEl.src = fileName;
         videoEl.load();
         sphereEl.setAttribute("visible", true);
@@ -820,13 +803,11 @@
           alert(
             "Cannot load video file: " +
               fileName +
-              "\nPlease check that the mp4 is in the same folder as this HTML file, and that the name exactly matches orders_30subs.json."
+              "\nPlease check that the mp4 file exists and the name matches orders_30subs.json."
           );
           setStatus("Failed to load video: " + fileName);
-          console.error("[ERROR] Failed to load video:", fileName);
         };
 
-        // On canplay, try to auto-play
         videoEl.oncanplay = () => {
           setStatus("Video can play: " + fileName);
           tryPlayVideo("oncanplay");
@@ -845,16 +826,20 @@
         };
       }
 
-      /************* 6.2 Baseline audio trial *************/
-      function playBaselineTrial(seqItem) {
-        const fileName = seqItem.file || BASELINE_MP3_DEFAULT;
-        baselineAudio.src = fileName;
-        baselineAudio.load();
-
-        // Hide the sphere, only play audio
+      function playBaselineTrial(seqItem, fileName) {
+        try {
+          videoEl.pause();
+        } catch (e) {}
         sphereEl.setAttribute("visible", false);
 
-        setStatus("Loading baseline audio: " + fileName);
+        try {
+          baselineAudio.pause();
+        } catch (e) {}
+
+        baselineAudio.src = fileName || BASELINE_MP3_DEFAULT;
+        baselineAudio.load();
+
+        setStatus("Loading baseline audio: " + baselineAudio.src);
 
         baselineAudio.onerror = () => {
           console.error("[ERROR] Failed to load baseline audio:", fileName);
@@ -863,23 +848,22 @@
               fileName +
               "\nPlease confirm that the mp3 file is in the same folder as this HTML file."
           );
-          // Skip to next trial
           handleTrialEnded();
         };
 
         baselineAudio.oncanplay = () => {
-          setStatus("Baseline audio can play: " + fileName);
+          setStatus("Baseline audio can play: " + baselineAudio.src);
           tryPlayBaseline("oncanplay(baseline)");
         };
 
         baselineAudio.onplay = () => {
-          setStatus("Baseline audio playing: " + fileName);
+          setStatus("Baseline audio playing: " + baselineAudio.src);
           if (exitBtn3D) exitBtn3D.setAttribute("visible", true);
           if (exitVrHtmlBtn) exitVrHtmlBtn.style.display = "block";
         };
 
         baselineAudio.onended = () => {
-          setStatus("Baseline audio finished: " + fileName);
+          setStatus("Baseline audio finished: " + baselineAudio.src);
           handleTrialEnded();
         };
       }
@@ -888,9 +872,8 @@
         showRestCountdown();
       }
 
-      /************* 7. Rest screen (black + countdown / next / end) *************/
+      /************* 8. Rest screens *************/
       function showRestCountdown() {
-        // Pause video / audio and show a black screen
         try {
           videoEl.pause();
         } catch (e) {}
@@ -904,19 +887,14 @@
 
         if (!restPanel || !restMain || !restCountdown) return;
 
-        // Rest text
         restMain.setAttribute(
           "value",
           "Please answer the questions and rest."
         );
-        restCountdown.setAttribute(
-          "value",
-          REST_SECONDS.toString() + " s"
-        );
+        restCountdown.setAttribute("value", REST_SECONDS.toString() + " s");
         restPanel.setAttribute("visible", true);
         if (exitBtn3D) exitBtn3D.setAttribute("visible", true);
 
-        // Start 45-second countdown
         restRemaining = REST_SECONDS;
         clearRestTimer();
         restTimerId = setInterval(() => {
