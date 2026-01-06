@@ -176,6 +176,7 @@
       <!-- Rest panel (black + text + countdown / next / end) -->
       <a-entity
         id="restPanel"
+        position="0 1.6 -2"
         visible="false"
       >
         <a-plane
@@ -931,7 +932,7 @@
 
         if (!restPanel || !restMain || !restCountdown) return;
 
-        placeInFrontOfCamera(restPanel, 2, 0);
+        
         restMain.setAttribute(
           "value",
           "Please answer the questions and rest."
@@ -959,7 +960,7 @@
         const nextIndex = currentTrialIndex + 1;
         const total = sequenceItems.length;
 
-        placeInFrontOfCamera(restPanel, 2, 0);
+        
 
         if (nextIndex < total) {
           const label = "Next video (" + (nextIndex + 1) + "/" + total + ") will start.";
@@ -991,7 +992,7 @@
 
         if (!restPanel || !restMain || !restCountdown) return;
 
-        placeInFrontOfCamera(restPanel, 2, 0);
+        
         restMain.setAttribute("value", "Experiment finished.");
         restCountdown.setAttribute("value", "");
         restPanel.setAttribute("visible", true);
