@@ -237,11 +237,11 @@
         <!-- Start experiment button (lower position, avoid accidental hit) -->
         <a-entity
           id="welcomeStartBtn"
-          class="clickable"
           position="0 -0.45 0.03"
         >
           <a-plane
             id="welcomeStartPlane"
+            class="clickable"
             width="1.1"
             height="0.2"
             material="color: #ffffff; shader: flat; opacity: 0.95"
@@ -254,6 +254,7 @@
             position="0 0 0.02"
           ></a-text>
         </a-entity>
+
       </a-entity>
 
       <!-- Resume options panel when re-entering VR -->
@@ -299,16 +300,9 @@
             height="0.2"
             material="color: #ffffff; shader: flat; opacity: 0.95"
           ></a-plane>
-          <a-text
-            value="Play previous video"
-            align="center"
-            color="#000000"
-            width="1.1"
-            position="0 0 0.02"
-          ></a-text>
+          <a-text value="Play previous video" ...></a-text>
         </a-entity>
 
-        <!-- Play next video -->
         <a-entity
           id="resumeNextBtn"
           class="clickable"
@@ -320,14 +314,9 @@
             height="0.2"
             material="color: #ffffff; shader: flat; opacity: 0.95"
           ></a-plane>
-          <a-text
-            value="Play next video"
-            align="center"
-            color="#000000"
-            width="1.1"
-            position="0 0 0.02"
-          ></a-text>
+          <a-text value="Play next video" ...></a-text>
         </a-entity>
+
       </a-entity>
 
       <!-- 3D Exit VR button -->
@@ -570,20 +559,37 @@
         });
       }
 
-      if (welcomeStartBtn && welcomeStartPlane) {
-        welcomeStartBtn.addEventListener("mouseenter", () => {
+
+      /************* 5. VR buttons and exit / resume logic *************/
+      // 3D Exit VR button (bottom)
+      if (exitPlane) {
+        exitPlane.addEventListener("mouseenter", () => {
+          exitPlane.setAttribute("material", "color: #ff9800; shader: flat");
+        });
+        exitPlane.addEventListener("mouseleave", () => {
+          exitPlane.setAttribute("material", "color: #ffffff; shader: flat");
+        });
+        exitPlane.addEventListener("click", () => {
+          sceneEl.exitVR();
+          setStatus("Requested to exit immersive mode (Exit VR).");
+        });
+      }
+
+      // Welcome "Start experiment" button – hit area is the white plane
+      if (welcomeStartPlane) {
+        welcomeStartPlane.addEventListener("mouseenter", () => {
           welcomeStartPlane.setAttribute(
             "material",
-            "color: #ff9800; shader: flat"
+            "color: #ff9800; shader: flat; opacity: 0.95"
           );
         });
-        welcomeStartBtn.addEventListener("mouseleave", () => {
+        welcomeStartPlane.addEventListener("mouseleave", () => {
           welcomeStartPlane.setAttribute(
             "material",
-            "color: #ffffff; shader: flat"
+            "color: #ffffff; shader: flat; opacity: 0.95"
           );
         });
-        welcomeStartBtn.addEventListener("click", () => {
+        welcomeStartPlane.addEventListener("click", () => {
           if (!sequenceItems || sequenceItems.length === 0) {
             setStatus("Sequence is not loaded. Please refresh the page.");
             return;
@@ -600,20 +606,21 @@
         });
       }
 
-      if (resumePrevBtn && resumePrevPlane) {
-        resumePrevBtn.addEventListener("mouseenter", () => {
+      // Resume panel – "Play previous video"
+      if (resumePrevPlane) {
+        resumePrevPlane.addEventListener("mouseenter", () => {
           resumePrevPlane.setAttribute(
             "material",
-            "color: #ff9800; shader: flat"
+            "color: #ff9800; shader: flat; opacity: 0.95"
           );
         });
-        resumePrevBtn.addEventListener("mouseleave", () => {
+        resumePrevPlane.addEventListener("mouseleave", () => {
           resumePrevPlane.setAttribute(
             "material",
-            "color: #ffffff; shader: flat"
+            "color: #ffffff; shader: flat; opacity: 0.95"
           );
         });
-        resumePrevBtn.addEventListener("click", () => {
+        resumePrevPlane.addEventListener("click", () => {
           if (!sequenceItems || sequenceItems.length === 0) {
             setStatus("Sequence is not loaded. Cannot replay previous video.");
             return;
@@ -628,20 +635,21 @@
         });
       }
 
-      if (resumeNextBtn && resumeNextPlane) {
-        resumeNextBtn.addEventListener("mouseenter", () => {
+      // Resume panel – "Play next video"
+      if (resumeNextPlane) {
+        resumeNextPlane.addEventListener("mouseenter", () => {
           resumeNextPlane.setAttribute(
             "material",
-            "color: #ff9800; shader: flat"
+            "color: #ff9800; shader: flat; opacity: 0.95"
           );
         });
-        resumeNextBtn.addEventListener("mouseleave", () => {
+        resumeNextPlane.addEventListener("mouseleave", () => {
           resumeNextPlane.setAttribute(
             "material",
-            "color: #ffffff; shader: flat"
+            "color: #ffffff; shader: flat; opacity: 0.95"
           );
         });
-        resumeNextBtn.addEventListener("click", () => {
+        resumeNextPlane.addEventListener("click", () => {
           if (!sequenceItems || sequenceItems.length === 0) {
             setStatus("Sequence is not loaded. Cannot jump to next video.");
             return;
@@ -661,6 +669,7 @@
           playTrial(targetIndex);
         });
       }
+
 
       /************* 6. Load orders_30subs.json *************/
       async function initOrder() {
