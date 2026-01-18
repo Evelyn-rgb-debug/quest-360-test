@@ -167,20 +167,23 @@
           position="0 0.25 0.01"
         ></a-text>
 
-        <a-entity id="startBtn" class="clickable" position="0 -0.35 0.02">
-          <a-plane
-            width="1.6"
-            height="0.28"
-            material="color: #FFFFFF; shader: flat; opacity: 0.95"
-          ></a-plane>
-          <a-text
-            value="Start Demo"
-            align="center"
-            color="#000000"
-            width="1.8"
-            position="0 0 0.01"
-          ></a-text>
-        </a-entity>
+        <a-entity position="0 -0.35 0.02">
+            <a-plane
+              id="startBtn"
+              class="clickable"
+              width="1.6"
+              height="0.28"
+              material="color: #FFFFFF; shader: flat; opacity: 0.95"
+            ></a-plane>
+            <a-text
+              value="Start Demo"
+              align="center"
+              color="#000000"
+              width="1.8"
+              position="0 0 0.01"
+            ></a-text>
+          </a-entity>
+          
       </a-entity>
 
       <!-- End Panel -->
@@ -203,35 +206,42 @@
           position="0 0.30 0.01"
         ></a-text>
 
-        <a-entity id="replayBtn" class="clickable" position="0 0.00 0.02">
-          <a-plane
+        <!-- Replay button (clickable MUST be on the plane) -->
+        <a-entity id="replayWrap" position="0 0.00 0.02">
+            <a-plane
+            id="replayBtn"
+            class="clickable"
             width="1.6"
             height="0.28"
             material="color: #FFFFFF; shader: flat; opacity: 0.95"
-          ></a-plane>
-          <a-text
+            ></a-plane>
+            <a-text
             value="Replay"
             align="center"
             color="#000000"
             width="1.8"
             position="0 0 0.01"
-          ></a-text>
+            ></a-text>
         </a-entity>
-
-        <a-entity id="exitBtn" class="clickable" position="0 -0.38 0.02">
-          <a-plane
+        
+        <!-- Exit button (clickable MUST be on the plane) -->
+        <a-entity id="exitWrap" position="0 -0.38 0.02">
+            <a-plane
+            id="exitBtn"
+            class="clickable"
             width="1.6"
             height="0.28"
             material="color: #FFFFFF; shader: flat; opacity: 0.95"
-          ></a-plane>
-          <a-text
+            ></a-plane>
+            <a-text
             value="Exit"
             align="center"
             color="#000000"
             width="1.8"
             position="0 0 0.01"
-          ></a-text>
+            ></a-text>
         </a-entity>
+  
       </a-entity>
     </a-scene>
   </body>
