@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>VR Demo Player - test.mp4</title>
+
+    <!-- A-Frame -->
+    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+
+    <style>
+      html, body { width: 100%; height: 100%; margin: 0; background: #000; }
+      /* Prevent long-press selection on mobile */
+      * { -webkit-tap-highlight-color: transparent; user-select: none; }
+    </style>
+
+    <script>
+      AFRAME.registerComponent("demo-player", {
+        init: function () {
+          const scene = this.el.sceneEl;
+          const video = document.getElementById("video360");
+          const startPanel = document.getElementById("startPanel");
+          const endPanel = document.getElementById("endPanel");
+          const startBtn = document.getElementById("startBtn");
+          const replayBtn = document.getElementById("replayBtn");
+          const exitBtn = document.getElementById("exitBtn");
+
+          const safePlay = async () => {
+            try {
+              // iOS/Android/Chrome autoplay policy: must be triggered by a user gesture.
+              await video.play();
+            } catch (e) {
+              // If it still fails, keep the start panel visible.
+              console.warn("Video play blocked:", e);
+              startPanel.setAttribute("visible", "true");
+            }
+          };
+
+          const enterImmersiveIfPossible = async () => {
+            // Request VR only if supported and not already in VR.
+            // Quest Browser supports this; desktop will just ignore if unavailable.
+            try {
+              if (scene && scene.enterVR && !scene.is("vr-mode")) {
+                scene.enterVR();
+              }
+            } catch (e) {
+              console.warn("enterVR failed:", e);
+            }
+          };
+
+          const startDemo = async () => {
+            startPanel.setAttribute("visible", "false");
+            endPanel.setAttribute("visible", "false");
+
+            // Ensure video can play with audio if you want audio:
+            // If you want *guaranteed* autoplay, set video.muted=true.
+            // Here we keep audio ON; user gesture comes from clicking/ gazing the button.
+            video.currentTime = 0;
+
+            await safePlay();
+            await enterImmersiveIfPossible();
+          };
+
+          const replayDemo = async () => {
+            endPanel.setAttribute("visible", "false");
+            video.currentTime = 0;
+            await safePlay();
+          };
+
+          const exitDemo = () => {
+            // Pause and exit VR if currently in VR
+            try { video.pause(); } catch (_) {}
+            try {
+              if (scene && scene.exitVR && scene.is("vr-mode")) scene.exitVR();
+            } catch (_) {}
+            startPanel.setAttribute("visible", "true");
+            endPanel.setAttribute("visible", "false");
+          };
+
+          // Wire buttons
+          startBtn.addEventListener("click", startDemo);
+          replayBtn.addEventListener("click", replayDemo);
+          exitBtn.addEventListener("click", exitDemo);
+
+          // Show end panel when video ends
+          video.addEventListener("ended", () => {
+            endPanel.setAttribute("visible", "true");
+          });
+
+          // Helpful: if user exits VR, keep UX sane
+          scene.addEventListener("exit-vr", () => {
+            // Keep playback running on desktop if desired; here we keep it paused for clarity
+            // Uncomment if you prefer it to continue:
+            // safePlay();
+          });
+
+          // Start panel visible by default
+          startPanel.setAttribute("visible", "true");
+          endPanel.setAttribute("visible", "false");
+        },
+      });
+    </script>
+  </head>
+
+  <body>
+    <a-scene
+      demo-player
+      renderer="colorManagement: true;"
+      background="color: #000000"
+      vr-mode-ui="enabled: true"
+      embedded
+    >
+      <a-assets>
+        <!-- Put test.mp4 in the same folder as this index.html -->
+        <video
+          id="video360"
+          src="test.mp4"
+          preload="auto"
+          crossorigin="anonymous"
+          playsinline
+          webkit-playsinline
+        ></video>
+      </a-assets>
+
+      <!-- 360 videosphere -->
+      <a-videosphere
+        src="#video360"
+        rotation="0 -90 0"
+      ></a-videosphere>
+
+      <!-- Camera + gaze cursor (Quest-friendly) -->
+      <a-entity id="rig">
+        <a-camera
+          position="0 1.6 0"
+          look-controls="reverseMouseDrag: false"
+        >
+          <!-- Gaze cursor: fuse=true means dwell-to-click -->
+          <a-cursor
+            id="cursor"
+            fuse="true"
+            fuse-timeout="1000"
+            raycaster="objects: .clickable"
+          ></a-cursor>
+        </a-camera>
+      </a-entity>
+
+      <!-- Start Panel (black screen style) -->
+      <a-entity
+        id="startPanel"
+        position="0 1.6 -2.2"
+        visible="true"
+      >
+        <a-plane
+          width="2.2"
+          height="1.2"
+          material="color: #000000; shader: flat; opacity: 0.92"
+        ></a-plane>
+
+        <a-text
+          value="Demo video (test.mp4)\nGaze the button to start"
+          align="center"
+          color="#FFFFFF"
+          width="2.0"
+          position="0 0.25 0.01"
+        ></a-text>
+
+        <a-entity id="startBtn" class="clickable" position="0 -0.35 0.02">
+          <a-plane
+            width="1.6"
+            height="0.28"
+            material="color: #FFFFFF; shader: flat; opacity: 0.95"
+          ></a-plane>
+          <a-text
+            value="Start Demo"
+            align="center"
+            color="#000000"
+            width="1.8"
+            position="0 0 0.01"
+          ></a-text>
+        </a-entity>
+      </a-entity>
+
+      <!-- End Panel -->
+      <a-entity
+        id="endPanel"
+        position="0 1.6 -2.2"
+        visible="false"
+      >
+        <a-plane
+          width="2.2"
+          height="1.2"
+          material="color: #000000; shader: flat; opacity: 0.92"
+        ></a-plane>
+
+        <a-text
+          value="Video ended"
+          align="center"
+          color="#FFFFFF"
+          width="2.0"
+          position="0 0.30 0.01"
+        ></a-text>
+
+        <a-entity id="replayBtn" class="clickable" position="0 0.00 0.02">
+          <a-plane
+            width="1.6"
+            height="0.28"
+            material="color: #FFFFFF; shader: flat; opacity: 0.95"
+          ></a-plane>
+          <a-text
+            value="Replay"
+            align="center"
+            color="#000000"
+            width="1.8"
+            position="0 0 0.01"
+          ></a-text>
+        </a-entity>
+
+        <a-entity id="exitBtn" class="clickable" position="0 -0.38 0.02">
+          <a-plane
+            width="1.6"
+            height="0.28"
+            material="color: #FFFFFF; shader: flat; opacity: 0.95"
+          ></a-plane>
+          <a-text
+            value="Exit"
+            align="center"
+            color="#000000"
+            width="1.8"
+            position="0 0 0.01"
+          ></a-text>
+        </a-entity>
+      </a-entity>
+    </a-scene>
+  </body>
+</html>
