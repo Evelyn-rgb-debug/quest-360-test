@@ -2,13 +2,9 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1, viewport-fit=cover"
-    />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>VR Demo Player - test.mp4</title>
 
-    <!-- A-Frame -->
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 
     <style>
@@ -17,6 +13,29 @@
     </style>
 
     <script>
+      // Simple hover feedback (works for gaze + controller + mouse)
+      AFRAME.registerComponent("hover-feedback", {
+        schema: { hoverColor: { default: "#DDDDDD" }, baseColor: { default: "#FFFFFF" } },
+        init: function () {
+          const el = this.el;
+          const base = this.data.baseColor;
+          const hover = this.data.hoverColor;
+
+          el.setAttribute("material", "color", base);
+
+          el.addEventListener("mouseenter", () => {
+            el.setAttribute("material", "color", hover);
+            console.log("[hover]", el.id);
+          });
+          el.addEventListener("mouseleave", () => {
+            el.setAttribute("material", "color", base);
+          });
+          el.addEventListener("click", () => {
+            console.log("[click]", el.id);
+          });
+        },
+      });
+
       AFRAME.registerComponent("demo-player", {
         init: function () {
           const scene = this.el.sceneEl;
@@ -38,6 +57,7 @@
               await video.play();
             } catch (e) {
               console.warn("Video play blocked:", e);
+              // If play is blocked, show start panel again
               startPanel.setAttribute("visible", "true");
             }
           };
@@ -53,6 +73,7 @@
           };
 
           const startDemo = async () => {
+            console.log("== startDemo triggered ==");
             startPanel.setAttribute("visible", "false");
             endPanel.setAttribute("visible", "false");
 
@@ -62,15 +83,16 @@
           };
 
           const replayDemo = async () => {
+            console.log("== replayDemo triggered ==");
             endPanel.setAttribute("visible", "false");
             video.currentTime = 0;
             await safePlay();
           };
 
           const exitDemo = () => {
+            console.log("== exitDemo triggered ==");
             try { video.pause(); } catch (_) {}
 
-            // Exit VR if currently in VR
             try {
               if (scene && scene.exitVR && scene.is("vr-mode")) scene.exitVR();
             } catch (_) {}
@@ -80,31 +102,29 @@
           };
 
           const exitVROnly = () => {
+            console.log("== exitVROnly triggered ==");
             try {
-              if (scene && scene.exitVR && scene.is("vr-mode")) {
-                scene.exitVR();
-              }
+              if (scene && scene.exitVR && scene.is("vr-mode")) scene.exitVR();
             } catch (e) {
               console.warn("exitVR failed:", e);
             }
           };
 
-          // Button bindings
+          // Bind buttons
           startBtn.addEventListener("click", startDemo);
           replayBtn.addEventListener("click", replayDemo);
           exitBtn.addEventListener("click", exitDemo);
           vrExitBtn.addEventListener("click", exitVROnly);
 
-          // Show end panel when video ends
+          // End detection
           video.addEventListener("ended", () => {
             endPanel.setAttribute("visible", "true");
           });
 
-          // VR enter/exit handling for HUD visibility
+          // VR enter/exit handling
           scene.addEventListener("enter-vr", () => {
             vrExitHud.setAttribute("visible", "true");
           });
-
           scene.addEventListener("exit-vr", () => {
             vrExitHud.setAttribute("visible", "false");
           });
@@ -127,7 +147,6 @@
       embedded
     >
       <a-assets>
-        <!-- Put test.mp4 in the same folder as this index.html -->
         <video
           id="video360"
           src="test.mp4"
@@ -141,67 +160,78 @@
       <!-- 360 videosphere -->
       <a-videosphere src="#video360" rotation="0 -90 0"></a-videosphere>
 
-      <!-- Camera + gaze cursor + VR Exit HUD -->
+      <!-- Camera rig -->
       <a-entity id="rig">
         <a-camera position="0 1.6 0" look-controls="reverseMouseDrag: false">
+          <!-- Gaze cursor (fuse) -->
           <a-cursor
             id="cursor"
             fuse="true"
-            fuse-timeout="1000"
-            raycaster="objects: .clickable; far: 10"
+            fuse-timeout="900"
+            raycaster="objects: .clickable; far: 20; interval: 50"
           ></a-cursor>
 
-          <!-- VR Exit Button (HUD, head-locked) -->
-          <a-entity id="vrExitHud" position="0 -0.60 -1.2" visible="false">
+          <!-- VR Exit HUD -->
+          <a-entity id="vrExitHud" position="0 -0.62 -1.25" visible="false">
             <a-plane
               id="vrExitBtn"
               class="clickable"
-              width="0.85"
-              height="0.22"
-              material="color: #FFFFFF; shader: flat; opacity: 0.90"
+              hover-feedback="baseColor: #FFFFFF; hoverColor: #DDDDDD"
+              width="0.9"
+              height="0.24"
+              position="0 0 0.08"
+              material="shader: flat; opacity: 0.92"
             ></a-plane>
             <a-text
               value="Exit VR"
               align="center"
               color="#000000"
               width="1.2"
-              position="0 0 0.01"
+              position="0 0 0.10"
             ></a-text>
           </a-entity>
         </a-camera>
+
+        <!-- Controller laser (optional but very reliable on Quest) -->
+        <a-entity laser-controls="hand: right" raycaster="objects: .clickable; far: 20"></a-entity>
+        <a-entity laser-controls="hand: left"  raycaster="objects: .clickable; far: 20"></a-entity>
       </a-entity>
 
       <!-- Start Panel -->
       <a-entity id="startPanel" position="0 1.6 -2.2" visible="true">
+        <!-- Background plane pushed BACK to avoid intercepting rays -->
         <a-plane
           width="2.2"
           height="1.2"
+          position="0 0 -0.06"
           material="color: #000000; shader: flat; opacity: 0.92"
         ></a-plane>
 
         <a-text
-          value="Demo video (test.mp4)\nGaze the button to start"
+          value="Demo video (test.mp4)\nGaze or click the button to start"
           align="center"
           color="#FFFFFF"
           width="2.0"
-          position="0 0.25 0.01"
+          position="0 0.25 0.02"
         ></a-text>
 
-        <!-- Start button: clickable MUST be on the plane -->
-        <a-entity position="0 -0.35 0.02">
+        <!-- Start button plane pushed FORWARD clearly -->
+        <a-entity position="0 -0.35 0.00">
           <a-plane
             id="startBtn"
             class="clickable"
-            width="1.6"
-            height="0.28"
-            material="color: #FFFFFF; shader: flat; opacity: 0.95"
+            hover-feedback="baseColor: #FFFFFF; hoverColor: #DDDDDD"
+            width="1.65"
+            height="0.30"
+            position="0 0 0.08"
+            material="shader: flat; opacity: 0.95"
           ></a-plane>
           <a-text
             value="Start Demo"
             align="center"
             color="#000000"
-            width="1.8"
-            position="0 0 0.01"
+            width="1.9"
+            position="0 0 0.10"
           ></a-text>
         </a-entity>
       </a-entity>
@@ -211,6 +241,7 @@
         <a-plane
           width="2.2"
           height="1.2"
+          position="0 0 -0.06"
           material="color: #000000; shader: flat; opacity: 0.92"
         ></a-plane>
 
@@ -219,42 +250,44 @@
           align="center"
           color="#FFFFFF"
           width="2.0"
-          position="0 0.30 0.01"
+          position="0 0.30 0.02"
         ></a-text>
 
-        <!-- Replay button -->
-        <a-entity id="replayWrap" position="0 0.00 0.02">
+        <a-entity position="0 0.00 0.00">
           <a-plane
             id="replayBtn"
             class="clickable"
-            width="1.6"
-            height="0.28"
-            material="color: #FFFFFF; shader: flat; opacity: 0.95"
+            hover-feedback="baseColor: #FFFFFF; hoverColor: #DDDDDD"
+            width="1.65"
+            height="0.30"
+            position="0 0 0.08"
+            material="shader: flat; opacity: 0.95"
           ></a-plane>
           <a-text
             value="Replay"
             align="center"
             color="#000000"
-            width="1.8"
-            position="0 0 0.01"
+            width="1.9"
+            position="0 0 0.10"
           ></a-text>
         </a-entity>
 
-        <!-- Exit button -->
-        <a-entity id="exitWrap" position="0 -0.38 0.02">
+        <a-entity position="0 -0.38 0.00">
           <a-plane
             id="exitBtn"
             class="clickable"
-            width="1.6"
-            height="0.28"
-            material="color: #FFFFFF; shader: flat; opacity: 0.95"
+            hover-feedback="baseColor: #FFFFFF; hoverColor: #DDDDDD"
+            width="1.65"
+            height="0.30"
+            position="0 0 0.08"
+            material="shader: flat; opacity: 0.95"
           ></a-plane>
           <a-text
             value="Exit"
             align="center"
             color="#000000"
-            width="1.8"
-            position="0 0 0.01"
+            width="1.9"
+            position="0 0 0.10"
           ></a-text>
         </a-entity>
       </a-entity>
