@@ -1,0 +1,1341 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>VR Spatial Audio Experiment (video + rest + exit)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- A-Frame core -->
+    <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
+
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: #000;
+        font-family: Arial, Helvetica, sans-serif;
+      }
+
+      #startBox,
+      #tapToPlay {
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.8);
+        color: #fff;
+        padding: 16px 24px;
+        border-radius: 8px;
+        max-width: 420px;
+        text-align: center;
+        z-index: 9999;
+      }
+
+      #tapToPlay {
+        top: 10%;
+        display: none;
+      }
+
+      #startBox {
+        top: 25%;
+        display: none;
+      }
+
+      #startBox button,
+      #tapToPlay button {
+        margin-top: 10px;
+        padding: 8px 16px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        background: #4caf50;
+        color: #fff;
+        font-size: 14px;
+      }
+
+      #exitVrHtmlBtn {
+        position: absolute;
+        right: 16px;
+        top: 16px;
+        z-index: 9999;
+        background: rgba(0, 0, 0, 0.7);
+        color: white;
+        border: 1px solid #fff;
+        border-radius: 6px;
+        padding: 6px 12px;
+        cursor: pointer;
+        font-size: 14px;
+        display: none;
+      }
+
+      #status {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 4px 8px;
+        font-size: 12px;
+        color: #eee;
+        background: rgba(0, 0, 0, 0.6);
+        z-index: 9999;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Hidden media elements -->
+    <video
+      id="video"
+      crossorigin="anonymous"
+      playsinline
+      webkit-playsinline
+      preload="auto"
+      style="display: none"
+    ></video>
+
+    <audio
+      id="baselineAudio"
+      crossorigin="anonymous"
+      preload="auto"
+      style="display: none"
+    ></audio>
+
+    <!-- Desktop tap-to-play overlay -->
+    <div id="tapToPlay">
+      <h2>Tap to enable playback</h2>
+      <p>
+        The browser blocked autoplay. Please tap the button below to allow video
+        and audio playback.
+      </p>
+      <button id="tapPlayBtn">Tap to play</button>
+    </div>
+
+    <!-- Desktop start overlay -->
+    <div id="startBox">
+      <h2>Start experiment</h2>
+      <p>
+        The page will play videos according to <b>orders_30subs.json</b>.<br />
+        After each video, a black rest screen with a 45-second countdown will
+        appear in VR.<br />
+        During this time, please answer the questionnaire and rest.
+      </p>
+      <button id="startBtn">OK</button>
+    </div>
+
+    <!-- Desktop Exit VR button (for safety) -->
+    <button
+      id="exitVrHtmlBtn"
+      onclick="document.querySelector('a-scene').exitVR();"
+    >
+      Exit VR
+    </button>
+
+    <!-- Status bar -->
+    <div id="status">Status: waiting for orders_30subs.json to load…</div>
+
+    <!-- A-Frame scene -->
+    <a-scene
+      id="scene"
+      background="color: #000000"
+      vr-mode-ui="enabled: true"
+      renderer="antialias: true; colorManagement: true;"
+    >
+      <!-- Simple lighting so panels/buttons are visible -->
+      <a-entity light="type: ambient; color: #ffffff; intensity: 1.0"></a-entity>
+      <a-entity
+        light="type: directional; color: #ffffff; intensity: 0.4"
+        position="0 2 1"
+      ></a-entity>
+
+      <!-- 360 video sphere -->
+      <a-videosphere
+        id="sphere"
+        src="#video"
+        rotation="0 0 0"
+        visible="false"
+      ></a-videosphere>
+
+      <!-- Camera + gaze cursor -->
+      <a-entity id="cameraRig">
+        <a-camera
+          id="camera"
+          wasd-controls-enabled="false"
+          look-controls="pointerLockEnabled: true"
+        >
+          <a-entity
+            cursor="rayOrigin: entity; fuse: true; fuseTimeout: 800"
+            position="0 0 -1"
+            geometry="primitive: ring; radiusInner: 0.01; radiusOuter: 0.015"
+            material="color: #ffeb3b; shader: flat"
+            raycaster="objects: .clickable; far: 100"
+            animation__mouseenter="property: scale; to: 1.3 1.3 1.3; startEvents: mouseenter; dur: 150"
+            animation__mouseleave="property: scale; to: 1 1 1; startEvents: mouseleave; dur: 150"
+          ></a-entity>
+        </a-camera>
+      </a-entity>
+
+      <!-- Rest panel (black + text + countdown / next / end) -->
+      <a-entity
+        id="restPanel"
+        position="0 1.6 -2"
+        visible="false"
+      >
+        <a-plane
+          id="restBg"
+          width="2.4"
+          height="1.6"
+          material="color: #000000; shader: flat; opacity: 0.98"
+        ></a-plane>
+
+        <a-text
+          id="restMain"
+          value="Please answer the questions and rest."
+          align="center"
+          color="#ffffff"
+          width="2.0"
+          position="0 0.35 0.02"
+        ></a-text>
+
+        <a-text
+          id="restCountdown"
+          value="45 s"
+          align="center"
+          color="#ffffff"
+          width="1.5"
+          position="0 0 0.02"
+        ></a-text>
+      </a-entity>
+
+      <!-- Welcome panel -->
+      <a-entity
+        id="welcomePanel"
+        visible="false"
+      >
+        <a-plane
+          id="welcomeBg"
+          width="2.2"
+          height="1.4"
+          material="color: #000000; shader: flat; opacity: 0.98"
+        ></a-plane>
+
+        <a-text
+          id="welcomeTitle"
+          value="Welcome to the experiment"
+          align="center"
+          color="#ffffff"
+          width="2.0"
+          position="0 0.3 0.02"
+        ></a-text>
+
+        <a-text
+          id="welcomeHint"
+          value="Look down and use the yellow ring to start."
+          align="center"
+          color="#ffffff"
+          width="1.9"
+          position="0 0.05 0.02"
+        ></a-text>
+
+        <a-entity
+          id="welcomeStartBtn"
+          position="0 -0.9 0.03"
+        >
+          <a-plane
+            id="welcomeStartPlane"
+            class="clickable"
+            width="1.1"
+            height="0.2"
+            material="color: #ffffff; shader: flat; opacity: 0.7"
+          ></a-plane>
+          <a-text
+            value="Start experiment"
+            align="center"
+            color="#000000"
+            width="1.0"
+            position="0 0 0.02"
+          ></a-text>
+        </a-entity>
+      </a-entity>
+
+      <!-- Resume panel shown after re-entering VR -->
+      <a-entity
+        id="resumePanel"
+        visible="false"
+      >
+        <a-plane
+          id="resumeBg"
+          width="2.2"
+          height="1.4"
+          material="color: #000000; shader: flat; opacity: 0.98"
+        ></a-plane>
+
+        <a-text
+          id="resumeTitle"
+          value="You have re-entered VR."
+          align="center"
+          color="#ffffff"
+          width="2.0"
+          position="0 0.35 0.02"
+        ></a-text>
+
+        <a-text
+          id="resumeHint"
+          value="Please choose what to play next."
+          align="center"
+          color="#ffffff"
+          width="1.9"
+          position="0 0.12 0.02"
+        ></a-text>
+
+        <a-entity
+          id="resumePrevBtn"
+          position="-0.6 -0.8 0.03"
+        >
+          <a-plane
+            id="resumePrevPlane"
+            class="clickable"
+            width="1.0"
+            height="0.2"
+            material="color: #ffffff; shader: flat; opacity: 0.7"
+          ></a-plane>
+          <a-text
+            value="Play previous video"
+            align="center"
+            color="#000000"
+            width="1.1"
+            position="0 0 0.02"
+          ></a-text>
+        </a-entity>
+
+        <a-entity
+          id="resumeNextBtn"
+          position="0.6 -0.8 0.03"
+        >
+          <a-plane
+            id="resumeNextPlane"
+            class="clickable"
+            width="1.0"
+            height="0.2"
+            material="color: #ffffff; shader: flat; opacity: 0.7"
+          ></a-plane>
+          <a-text
+            value="Play next video"
+            align="center"
+            color="#000000"
+            width="1.1"
+            position="0 0 0.02"
+          ></a-text>
+        </a-entity>
+      </a-entity>
+
+      <!-- 3D Exit VR button -->
+      <a-entity id="exitBtn3D" position="0 0.4 -1.2" visible="false">
+        <a-plane
+          id="exitPlane"
+          class="clickable"
+          width="0.4"
+          height="0.1"
+          material="color: #ffffff; shader: flat; opacity: 0.7"
+        ></a-plane>
+        <a-text
+          value="Exit VR"
+          align="center"
+          color="#000000"
+          width="0.6"
+          position="0 0 0.02"
+        ></a-text>
+      </a-entity>
+    </a-scene>
+
+    <script>
+      /************* 0. Constants *************/
+      const ORDER_FILE = "orders_30subs.json";
+      const BASELINE_MP3_DEFAULT = "baseline.mp3";
+      const REST_SECONDS = 45;
+      const NEXT_WAIT_MS = 2000;
+      // Y rotation offset so that the main scene is in front (tune if needed)
+      const VIDEO_YAW_OFFSET = -90;
+
+        /************* 0b. Audio mixing + balancing config (ADD) *************/
+        // SNR in dB: UAV louder than background by these dB values
+      const DEFAULT_SNR_KEY = "M";
+      const SNR_DB = { H: 14, M: 12, L: 10 };
+
+        // Background files (same folder as HTML)
+      const BG_FILES = {
+      park: "park.wav",
+      street: "street.mp3", // also used for "road"
+      home: "home.wav",
+      office: "office.wav",
+      };
+
+        // UAV pools (4 ev takes each)
+      function uavOutdoorUrl(ev) {
+      return `Ed_M3_10_TH_N_C_nw_ev${ev}_M5_TH_binaural_dir_15s.wav`;
+      }
+      function uavIndoor2mUrl(ev) {
+      return `Ed_M3_10_TH_N_C_nw_ev${ev}_M5_indoor_2m.wav`;
+      }
+      function uavIndoor6mUrl(ev) {
+      return `Ed_M3_10_TH_N_C_nw_ev${ev}_M5_indoor_6m.wav`;
+      }
+      function uavIndoor8mUrl(ev) {
+      return `Ed_M3_10_TH_N_C_nw_ev${ev}_M5_indoor_8m.wav`;
+      }
+
+      // Audio scheduling
+      const AUDIO_START_DELAY_SEC = 0.20; // helps align video start with WebAudio
+      const MASTER_GAIN = 0.85;
+
+
+
+      /************* 1. State *************/
+      let participantId = null;
+      let ordersAll = null;
+      let sequenceItems = [];
+      let currentTrialIndex = -1;
+
+      const sceneEl = document.getElementById("scene");
+      const videoEl = document.getElementById("video");
+      const sphereEl = document.getElementById("sphere");
+      const baselineAudio = document.getElementById("baselineAudio");
+
+      const startBox = document.getElementById("startBox");
+      const startBtn = document.getElementById("startBtn");
+      const tapToPlay = document.getElementById("tapToPlay");
+      const tapPlayBtn = document.getElementById("tapPlayBtn");
+      const statusEl = document.getElementById("status");
+
+      const restPanel = document.getElementById("restPanel");
+      const restMain = document.getElementById("restMain");
+      const restCountdown = document.getElementById("restCountdown");
+
+      const welcomePanel = document.getElementById("welcomePanel");
+      const welcomeStartPlane = document.getElementById("welcomeStartPlane");
+
+      const resumePanel = document.getElementById("resumePanel");
+      const resumePrevPlane = document.getElementById("resumePrevPlane");
+      const resumeNextPlane = document.getElementById("resumeNextPlane");
+
+      const exitBtn3D = document.getElementById("exitBtn3D");
+      const exitPlane = document.getElementById("exitPlane");
+
+      const exitVrHtmlBtn = document.getElementById("exitVrHtmlBtn");
+
+      let restTimerId = null;
+      let restRemaining = 0;
+      let hasStartedExperiment = false;
+      let showResumeMenuNextEnter = false;
+
+      /************* 2. Utilities *************/
+      function setStatus(msg) {
+        console.log("[Status]", msg);
+        if (statusEl) statusEl.textContent = "Status: " + msg;
+      }
+
+      function showTapToPlay(reason) {
+        tapToPlay.style.display = "block";
+        setStatus(
+          reason ? "Tap to enable playback (" + reason + ")" : "Tap to enable playback."
+        );
+      }
+
+      function hideTapToPlay() {
+        tapToPlay.style.display = "none";
+      }
+
+      // Place panel entity in front of current camera view
+      function placeInFrontOfCamera(entity, distance = 2, yOffset = 0) {
+        const cam = document.getElementById("camera");
+        if (!entity || !cam || !cam.object3D) return;
+        const camObj = cam.object3D;
+        const entObj = entity.object3D;
+        const pos = new THREE.Vector3();
+        const quat = new THREE.Quaternion();
+
+        camObj.getWorldPosition(pos);
+        camObj.getWorldQuaternion(quat);
+
+        entObj.position.copy(pos);
+        entObj.quaternion.copy(quat);
+        entObj.translateZ(-distance);
+        entObj.position.y += yOffset;
+      }
+
+        /************* 2b. WebAudio mixing + balanced ev selection (ADD) *************/
+        let audioCtx = null;
+        const audioAssetCache = new Map(); // url -> { buffer, rms }
+        let currentAudioSession = null;
+
+        function normStr(x) {
+        return (x ?? "").toString().trim();
+        }
+        function lowerStr(x) {
+        return normStr(x).toLowerCase();
+        }
+        function tokensOf(x) {
+        return lowerStr(x).split(/[_\s\-]+/).filter(Boolean);
+        }
+
+        async function ensureAudioContext() {
+        if (!audioCtx) {
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            audioCtx = new Ctx();
+        }
+        if (audioCtx.state === "suspended") {
+            await audioCtx.resume();
+        }
+        }
+
+        function computeRms(audioBuffer) {
+        const ch = audioBuffer.numberOfChannels;
+        const len = audioBuffer.length;
+        let sumSq = 0;
+        let n = 0;
+        for (let c = 0; c < ch; c++) {
+            const data = audioBuffer.getChannelData(c);
+            for (let i = 0; i < len; i++) sumSq += data[i] * data[i];
+            n += len;
+        }
+        return Math.sqrt(sumSq / Math.max(1, n));
+        }
+
+        async function loadAudioAsset(url) {
+        if (audioAssetCache.has(url)) return audioAssetCache.get(url);
+        await ensureAudioContext();
+        const resp = await fetch(url, { cache: "no-store" });
+        if (!resp.ok) throw new Error(`Fetch failed: ${url} (HTTP ${resp.status})`);
+        const arr = await resp.arrayBuffer();
+        const buf = await audioCtx.decodeAudioData(arr);
+        const rms = computeRms(buf);
+        const asset = { buffer: buf, rms };
+        audioAssetCache.set(url, asset);
+        return asset;
+        }
+
+        function stopCurrentAudioSession() {
+        if (!currentAudioSession) return;
+        try { currentAudioSession.stop(); } catch (e) {}
+        currentAudioSession = null;
+        }
+
+        // Balanced pick among ev1..ev4, persisted in localStorage
+        function balancedPickEv(poolKey) {
+        const key = "ev_balance_" + poolKey;
+        let state;
+        try {
+            state = JSON.parse(localStorage.getItem(key) || "");
+        } catch (e) {
+            state = null;
+        }
+        if (!state || !Array.isArray(state.counts) || state.counts.length !== 4) {
+            state = { counts: [0, 0, 0, 0], n: 0 };
+        }
+        const min = Math.min(...state.counts);
+        const candidates = [];
+        for (let i = 0; i < 4; i++) if (state.counts[i] === min) candidates.push(i);
+        const pick = candidates[Math.floor(Math.random() * candidates.length)];
+        state.counts[pick] += 1;
+        state.n += 1;
+        localStorage.setItem(key, JSON.stringify(state));
+        return pick + 1; // 1..4
+        }
+
+        function isDemoTrial(seqItem, fileName) {
+        const f = lowerStr(fileName);
+        const v = lowerStr(seqItem?.video);
+        const b = lowerStr(seqItem?.block);
+        return f.includes("videodemo") || v.includes("demo") || b === "demo";
+        }
+
+        function isBaselineTrial(seqItem, fileName) {
+        const f = lowerStr(fileName);
+        const v = lowerStr(seqItem?.video);
+        const t = lowerStr(seqItem?.type);
+        const b = lowerStr(seqItem?.block);
+        // tolerate a few common labels
+        return t === "baselineaudio" || v === "baseline" || f.includes("baseline") || b === "baseline";
+        }
+
+        function isBlockA(seqItem) {
+        return normStr(seqItem?.block).toUpperCase() === "A";
+        }
+
+        // Decide which background category (park/street/home/office) a trial belongs to
+        function getBgKey(seqItem, fileName) {
+        const v = lowerStr(seqItem?.video);
+        const f = lowerStr(fileName);
+        const s = v || f;
+
+        if (s.includes("park")) return "park";
+        if (s.includes("street") || s.includes("road")) return "street";
+        if (s.includes("home")) return "home";
+        if (s.includes("office")) return "office";
+
+        return null;
+        }
+
+        function getSNRDb(seqItem) {
+        const key = normStr(seqItem?.snr).toUpperCase() || DEFAULT_SNR_KEY;
+        return (key in SNR_DB) ? SNR_DB[key] : SNR_DB[DEFAULT_SNR_KEY];
+        }
+
+        // Rule: except demo, baseline, block A -> add background
+        function shouldAddBackground(seqItem, fileName) {
+        if (isDemoTrial(seqItem, fileName)) return false;
+        if (isBaselineTrial(seqItem, fileName)) return false;
+        if (isBlockA(seqItem)) return false;
+        return true;
+        }
+
+        // Rule-based UAV pool picking (and balanced ev selection)
+        function pickUavUrl(seqItem, fileName) {
+        // baseline and all outdoor (park/street/road) use outdoor dir_15s
+        const bgKey = getBgKey(seqItem, fileName);
+
+        // Indoor 판단：video/file 含 home/office
+        if (bgKey === "home" || bgKey === "office") {
+            const toks = tokensOf(seqItem?.video || fileName);
+            const isFar = toks.includes("f");
+            const isNear = toks.includes("n");
+
+            // Default if not marked: treat as near
+            const near = isNear || !isFar;
+
+            if (near) {
+            const ev = balancedPickEv("indoor_2m");
+            return uavIndoor2mUrl(ev);
+            }
+
+            // Far: home=6m, office=8m
+            if (bgKey === "home") {
+            const ev = balancedPickEv("indoor_6m");
+            return uavIndoor6mUrl(ev);
+            } else {
+            const ev = balancedPickEv("indoor_8m");
+            return uavIndoor8mUrl(ev);
+            }
+        }
+
+        // Outdoor default (including baseline / park / street / road)
+        const ev = balancedPickEv("outdoor_dir15s");
+        return uavOutdoorUrl(ev);
+        }
+
+        // WebAudio playback: UAV + optional background at target SNR
+        async function playMixedAudio({ uavUrl, bgUrl, snrDb, onEnded }) {
+        stopCurrentAudioSession();
+        await ensureAudioContext();
+
+        const uav = await loadAudioAsset(uavUrl);
+        const bg = bgUrl ? await loadAudioAsset(bgUrl) : null;
+
+        const uavSource = audioCtx.createBufferSource();
+        uavSource.buffer = uav.buffer;
+
+        let bgSource = null;
+        if (bg) {
+            bgSource = audioCtx.createBufferSource();
+            bgSource.buffer = bg.buffer;
+            bgSource.loop = true;
+        }
+
+        const uavGain = audioCtx.createGain();
+        const bgGain = audioCtx.createGain();
+        const master = audioCtx.createGain();
+        master.gain.value = MASTER_GAIN;
+
+        // mild compressor to reduce clipping risk
+        const comp = audioCtx.createDynamicsCompressor();
+        comp.threshold.value = -10;
+        comp.knee.value = 30;
+        comp.ratio.value = 6;
+        comp.attack.value = 0.003;
+        comp.release.value = 0.25;
+
+        // UAV fixed gain
+        uavGain.gain.value = 1.0;
+
+        // Background gain computed from RMS to hit SNR
+        if (bg) {
+            const target = Math.pow(10, snrDb / 20);
+            const gN = (uav.rms / Math.max(1e-9, bg.rms)) / Math.max(1e-9, target);
+            bgGain.gain.value = Math.min(3.0, Math.max(0.0, gN));
+        } else {
+            bgGain.gain.value = 0.0;
+        }
+
+        uavSource.connect(uavGain);
+        uavGain.connect(master);
+
+        if (bgSource) {
+            bgSource.connect(bgGain);
+            bgGain.connect(master);
+        }
+
+        master.connect(comp);
+        comp.connect(audioCtx.destination);
+
+        const startAt = audioCtx.currentTime + AUDIO_START_DELAY_SEC;
+        uavSource.start(startAt);
+        if (bgSource) bgSource.start(startAt);
+
+        let endedOnce = false;
+        uavSource.onended = () => {
+            if (endedOnce) return;
+            endedOnce = true;
+            if (typeof onEnded === "function") onEnded();
+        };
+
+        currentAudioSession = {
+            stop: () => {
+            try { uavSource.onended = null; } catch (e) {}
+            try { uavSource.stop(); } catch (e) {}
+            try { if (bgSource) bgSource.stop(); } catch (e) {}
+            },
+        };
+
+        return { durationSec: uav.buffer.duration };
+        }
+
+
+
+      /************* 3. Playback helpers *************/
+      async function tryPlayVideo(reason) {
+        // Do not auto-play if a panel is visible
+        if (
+          (restPanel && restPanel.getAttribute("visible")) ||
+          (welcomePanel && welcomePanel.getAttribute("visible")) ||
+          (resumePanel && resumePanel.getAttribute("visible"))
+        ) {
+          setStatus("Skip auto-play because a panel is visible.");
+          return false;
+        }
+
+        if (!videoEl || (!videoEl.src && !videoEl.currentSrc)) return false;
+
+        try {
+          const p = videoEl.play();
+          if (p && typeof p.then === "function") {
+            await p;
+          }
+          hideTapToPlay();
+          setStatus("Playing: " + (videoEl.currentSrc || videoEl.src || ""));
+          return true;
+        } catch (err) {
+          console.warn("video play() blocked or failed:", err);
+          showTapToPlay(reason || "play() was blocked");
+          return false;
+        }
+      }
+
+      async function tryPlayBaseline(reason) {
+        if (!baselineAudio || (!baselineAudio.src && !baselineAudio.currentSrc)) {
+          return false;
+        }
+        try {
+          const p = baselineAudio.play();
+          if (p && typeof p.then === "function") {
+            await p;
+          }
+          hideTapToPlay();
+          setStatus(
+            "Baseline audio playing: " +
+              (baselineAudio.currentSrc || baselineAudio.src || "")
+          );
+          return true;
+        } catch (err) {
+          console.warn("baseline play() blocked or failed:", err);
+          showTapToPlay(reason || "baseline play() was blocked");
+          return false;
+        }
+      }
+
+      function showWelcomePanel() {
+        if (!welcomePanel) return;
+
+        try {
+          videoEl.pause();
+        } catch (e) {}
+        try {
+          baselineAudio.pause();
+        } catch (e) {}
+
+        if (restPanel) restPanel.setAttribute("visible", false);
+        if (resumePanel) resumePanel.setAttribute("visible", false);
+        if (exitBtn3D) exitBtn3D.setAttribute("visible", false);
+
+        placeInFrontOfCamera(welcomePanel, 2, 0);
+        welcomePanel.setAttribute("visible", true);
+        setStatus("Welcome panel shown. Use the yellow ring to start.");
+      }
+
+      function hideWelcomePanel() {
+        if (welcomePanel) welcomePanel.setAttribute("visible", false);
+      }
+
+      function showResumeMenu() {
+        if (!resumePanel) return;
+
+        try {
+          videoEl.pause();
+        } catch (e) {}
+        try {
+          baselineAudio.pause();
+        } catch (e) {}
+
+        if (restPanel) restPanel.setAttribute("visible", false);
+        hideWelcomePanel();
+
+        placeInFrontOfCamera(resumePanel, 2, 0);
+        resumePanel.setAttribute("visible", true);
+        if (exitBtn3D) exitBtn3D.setAttribute("visible", true);
+
+        setStatus("Showing resume options (previous / next video).");
+      }
+
+      function hideResumeMenu() {
+        if (resumePanel) resumePanel.setAttribute("visible", false);
+      }
+
+      /************* 4. Scene events *************/
+      sceneEl.addEventListener("enter-vr", () => {
+        setStatus("Entered immersive mode.");
+        if (hasStartedExperiment && showResumeMenuNextEnter) {
+          showResumeMenu();
+          showResumeMenuNextEnter = false;
+          return;
+        }
+        tryPlayVideo("enter-vr");
+      });
+
+      sceneEl.addEventListener("exit-vr", () => {
+        setStatus("Exited immersive mode.");
+        if (hasStartedExperiment && sequenceItems && sequenceItems.length > 0) {
+          showResumeMenuNextEnter = true;
+          try {
+            videoEl.pause();
+          } catch (e) {}
+          try {
+            baselineAudio.pause();stopCurrentAudioSession();
+
+          } catch (e) {}
+          clearRestTimer();
+        }
+      });
+
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) {
+          tryPlayVideo("visibilitychange");
+        }
+      });
+
+      if (tapPlayBtn) {
+        tapPlayBtn.addEventListener("click", () => {
+          setStatus("User tapped to enable playback.");
+          hideTapToPlay();
+          if (
+            baselineAudio &&
+            baselineAudio.src &&
+            baselineAudio.paused === false
+          ) {
+            tryPlayBaseline("tap-click");
+          } else {
+            tryPlayVideo("tap-click");
+          }
+        });
+      }
+
+      /************* 5. VR buttons *************/
+      if (exitPlane) {
+        exitPlane.addEventListener("mouseenter", () => {
+          exitPlane.setAttribute("material", "color: #ff9800; shader: flat");
+        });
+        exitPlane.addEventListener("mouseleave", () => {
+          exitPlane.setAttribute("material", "color: #ffffff; shader: flat");
+        });
+        exitPlane.addEventListener("click", () => {
+          sceneEl.exitVR();
+          setStatus("Requested to exit immersive mode (Exit VR).");
+        });
+      }
+
+      if (welcomeStartPlane) {
+        welcomeStartPlane.addEventListener("mouseenter", () => {
+          welcomeStartPlane.setAttribute(
+            "material",
+            "color: #ff9800; shader: flat; opacity: 0.95"
+          );
+        });
+        welcomeStartPlane.addEventListener("mouseleave", () => {
+          welcomeStartPlane.setAttribute(
+            "material",
+            "color: #ffffff; shader: flat; opacity: 0.95"
+          );
+        });
+        welcomeStartPlane.addEventListener("click", () => {
+          if (!sequenceItems || sequenceItems.length === 0) {
+            setStatus("Sequence is not loaded. Please refresh the page.");
+            return;
+          }
+          if (startBox) startBox.style.display = "none";
+          hideWelcomePanel();
+          hideResumeMenu();
+          if (restPanel) restPanel.setAttribute("visible", false);
+          if (exitBtn3D) exitBtn3D.setAttribute("visible", false);
+
+          hasStartedExperiment = true;
+          currentTrialIndex = 0;
+          playTrial(currentTrialIndex);
+        });
+      }
+
+      if (resumePrevPlane) {
+        resumePrevPlane.addEventListener("mouseenter", () => {
+          resumePrevPlane.setAttribute(
+            "material",
+            "color: #ff9800; shader: flat; opacity: 0.95"
+          );
+        });
+        resumePrevPlane.addEventListener("mouseleave", () => {
+          resumePrevPlane.setAttribute(
+            "material",
+            "color: #ffffff; shader: flat; opacity: 0.95"
+          );
+        });
+        resumePrevPlane.addEventListener("click", () => {
+          if (!sequenceItems || sequenceItems.length === 0) {
+            setStatus("Sequence is not loaded. Cannot replay previous video.");
+            return;
+          }
+          hideResumeMenu();
+          if (restPanel) restPanel.setAttribute("visible", false);
+          clearRestTimer();
+
+          let targetIndex = currentTrialIndex;
+          if (targetIndex < 0) targetIndex = 0;
+          playTrial(targetIndex);
+        });
+      }
+
+      if (resumeNextPlane) {
+        resumeNextPlane.addEventListener("mouseenter", () => {
+          resumeNextPlane.setAttribute(
+            "material",
+            "color: #ff9800; shader: flat; opacity: 0.95"
+          );
+        });
+        resumeNextPlane.addEventListener("mouseleave", () => {
+          resumeNextPlane.setAttribute(
+            "material",
+            "color: #ffffff; shader: flat; opacity: 0.95"
+          );
+        });
+        resumeNextPlane.addEventListener("click", () => {
+          if (!sequenceItems || sequenceItems.length === 0) {
+            setStatus("Sequence is not loaded. Cannot jump to next video.");
+            return;
+          }
+          let targetIndex = currentTrialIndex + 1;
+          if (targetIndex >= sequenceItems.length) {
+            setStatus("Already at the last video; no next video to play.");
+            hideResumeMenu();
+            showRestEnd();
+            return;
+          }
+
+          hideResumeMenu();
+          if (restPanel) restPanel.setAttribute("visible", false);
+          clearRestTimer();
+
+          playTrial(targetIndex);
+        });
+      }
+
+      /************* 6. Load orders_30subs.json *************/
+      async function initOrder() {
+        try {
+          setStatus("Loading " + ORDER_FILE + " ...");
+          const resp = await fetch(ORDER_FILE, { cache: "no-store" });
+          const orders = await resp.json();
+          if (!Array.isArray(orders) || orders.length === 0) {
+            alert("orders_30subs.json is invalid or empty.");
+            setStatus("orders_30subs.json is invalid or empty.");
+            return;
+          }
+          ordersAll = orders;
+
+          const maxPid = orders.length;
+          let pidStr = prompt(
+            "Please enter participant ID (integer 1 ~ " + maxPid + "):"
+          );
+          if (!pidStr) {
+            alert("No ID entered. Experiment aborted.");
+            setStatus("No participant ID entered; stopped.");
+            return;
+          }
+          const pid = parseInt(pidStr, 10);
+          if (isNaN(pid) || pid < 1 || pid > maxPid) {
+            alert("Invalid ID: " + pid + ". It must be between 1 and " + maxPid + ".");
+            setStatus("Invalid participant ID: " + pid);
+            return;
+          }
+          participantId = pid;
+
+          const pObj =
+            orders.find((item) => item.participant === pid) || orders[pid - 1];
+          if (!pObj || !Array.isArray(pObj.sequence)) {
+            alert(
+              "Sequence for this participant was not found in orders_30subs.json."
+            );
+            setStatus("Sequence not found for this participant.");
+            return;
+          }
+
+          sequenceItems = pObj.sequence.slice();
+          console.log("Participant ID:", participantId);
+          console.log(
+            "Sequence:",
+            sequenceItems.map((s) => s.file)
+          );
+
+          if (startBox) startBox.style.display = "block";
+          showWelcomePanel();
+          setStatus(
+            "Sequence loaded (participant " +
+              participantId +
+              '). Put on the headset and use the yellow ring to press "Start experiment".'
+          );
+        } catch (err) {
+          console.error("Failed to read orders_30subs.json:", err);
+          alert(
+            "Failed to read orders_30subs.json. Please check that it is in the same folder as this HTML file."
+          );
+          setStatus("Failed to read orders_30subs.json.");
+        }
+      }
+
+      window.addEventListener("load", initOrder);
+
+      if (startBtn) {
+        startBtn.addEventListener("click", () => {
+          if (!sequenceItems || sequenceItems.length === 0) {
+            alert(
+              "Sequence has not been initialized. Please refresh the page and try again."
+            );
+            return;
+          }
+          startBox.style.display = "none";
+          showWelcomePanel();
+        });
+      }
+
+      /************* 7. Trial playback *************/
+      function clearRestTimer() {
+        if (restTimerId) {
+          clearInterval(restTimerId);
+          restTimerId = null;
+        }
+      }
+
+      function playTrial(index) {
+        const total = sequenceItems.length;
+        if (index < 0 || index >= total) {
+          showRestEnd();
+          return;
+        }
+        currentTrialIndex = index;
+
+        if (restPanel) restPanel.setAttribute("visible", false);
+        hideWelcomePanel();
+        hideResumeMenu();
+        if (exitBtn3D) exitBtn3D.setAttribute("visible", false);
+        clearRestTimer();
+
+        const seqItem = sequenceItems[index];
+        if (!seqItem) {
+          showRestEnd();
+          return;
+        }
+
+        const fileName = seqItem.file || "";
+        const lower = fileName.toLowerCase();
+        const isAudio =
+          lower.endsWith(".mp3") ||
+          lower.endsWith(".wav") ||
+          seqItem.type === "baselineAudio";
+
+        if (!fileName) {
+          setStatus("This trial has no file. Skipping to the next one.");
+          playTrial(index + 1);
+          return;
+        }
+
+        if (isAudio) {
+          playBaselineTrial(seqItem, fileName);
+        } else {
+          playVideoTrial(seqItem, fileName);
+        }
+      }
+
+
+
+
+
+      function playVideoTrial(seqItem, fileName) {
+        // stop any legacy audio element
+        try { baselineAudio.pause(); } catch (e) {}
+
+        // stop any WebAudio session
+        stopCurrentAudioSession();
+
+        // Hide sphere first so we never show the last frame of the previous video
+        sphereEl.setAttribute("visible", false);
+        try { videoEl.pause(); } catch (e) {}
+        try { videoEl.currentTime = 0; } catch (e) {}
+
+        const demo = isDemoTrial(seqItem, fileName);
+
+        // For non-demo trials, we deliver audio via WebAudio => mute the video track
+        if (!demo) {
+            videoEl.muted = true;
+            videoEl.volume = 0;
+        } else {
+            videoEl.muted = false;
+            videoEl.volume = 1;
+        }
+
+        videoEl.src = fileName;
+        videoEl.load();
+
+        // Apply yaw offset so that the main scene is in front
+        sphereEl.setAttribute("rotation", "0 " + VIDEO_YAW_OFFSET.toString() + " 0");
+        setStatus("Loading video: " + fileName);
+
+        // One-shot end guard: whichever ends first (audio/video) will end the trial once
+        let endedOnce = false;
+        const endTrialOnce = (reason) => {
+            if (endedOnce) return;
+            endedOnce = true;
+
+            stopCurrentAudioSession();
+            try { videoEl.pause(); } catch (e) {}
+            sphereEl.setAttribute("visible", false);
+
+            setStatus("Trial ended by " + reason + ": " + fileName);
+            showRestCountdown();
+        };
+
+        videoEl.onerror = () => {
+            const err = videoEl.error;
+            console.error("Video error object:", err);
+            let extra = "";
+            if (err) extra = " (error code: " + err.code + ")";
+            alert(
+            "Cannot load or decode video file: " +
+                fileName +
+                extra +
+                "\nPlease open the browser DevTools > Network panel to check the status of this file."
+            );
+            setStatus("Failed to load video: " + fileName + extra);
+            endTrialOnce("video-error");
+        };
+
+        videoEl.oncanplay = async () => {
+            setStatus("Video can play: " + fileName);
+
+            // For demo: keep old behavior (video audio only)
+            if (demo) {
+            await tryPlayVideo("oncanplay(demo)");
+            return;
+            }
+
+            // Non-demo: choose UAV + (optional) background by rules and JSON snr
+            const uavUrl = pickUavUrl(seqItem, fileName);
+
+            let bgUrl = null;
+            let snrDb = null;
+            if (shouldAddBackground(seqItem, fileName)) {
+            const bgKey = getBgKey(seqItem, fileName);
+            bgUrl = bgKey ? BG_FILES[bgKey] : null;
+            snrDb = getSNRDb(seqItem);
+            }
+
+            try {
+            await playMixedAudio({
+                uavUrl,
+                bgUrl,
+                snrDb: snrDb ?? getSNRDb(seqItem),
+                onEnded: () => endTrialOnce("audio"),
+            });
+            } catch (e) {
+            console.error("[ERROR] playMixedAudio failed:", e);
+            alert("Audio load/play failed. Please check WAV/MP3 file paths and GitHub hosting.");
+            endTrialOnce("audio-error");
+            return;
+            }
+
+            // Start video right after audio is scheduled (audio has a small start delay)
+            await tryPlayVideo("oncanplay(external-audio)");
+        };
+
+        videoEl.onplay = () => {
+            sphereEl.setAttribute("visible", true);
+            setStatus("Started playing video: " + fileName);
+            if (exitBtn3D) exitBtn3D.setAttribute("visible", true);
+            if (exitVrHtmlBtn) exitVrHtmlBtn.style.display = "block";
+        };
+
+        videoEl.onended = () => {
+            // For demo: end on video end
+            if (demo) {
+            setStatus("Demo video finished: " + fileName);
+            sphereEl.setAttribute("visible", false);
+            showRestCountdown();
+            return;
+            }
+            // For external-audio trials: end safely if video ends first (guarded)
+            endTrialOnce("video");
+        };
+        }
+
+      function playBaselineTrial(seqItem, fileName) {
+        // no video
+        try { videoEl.pause(); } catch (e) {}
+        sphereEl.setAttribute("visible", false);
+
+        // stop any legacy audio element
+        try { baselineAudio.pause(); } catch (e) {}
+        baselineAudio.src = ""; // avoid confusion
+
+        // stop any WebAudio session
+        stopCurrentAudioSession();
+
+        setStatus("Loading baseline (UAV only, no background) ...");
+
+        // One-shot end guard
+        let endedOnce = false;
+        const endTrialOnce = (reason) => {
+            if (endedOnce) return;
+            endedOnce = true;
+
+            stopCurrentAudioSession();
+            setStatus("Baseline ended by " + reason);
+            showRestCountdown();
+        };
+
+        // baseline per your rule: outdoor dir_15s (balanced ev)
+        const uavUrl = pickUavUrl({ ...seqItem, video: "baseline" }, fileName);
+
+        (async () => {
+            try {
+            await playMixedAudio({
+                uavUrl,
+                bgUrl: null,
+                snrDb: null,
+                onEnded: () => endTrialOnce("audio"),
+            });
+            if (exitBtn3D) exitBtn3D.setAttribute("visible", true);
+            if (exitVrHtmlBtn) exitVrHtmlBtn.style.display = "block";
+            setStatus("Baseline playing (UAV): " + uavUrl);
+            } catch (e) {
+            console.error("[ERROR] baseline playMixedAudio failed:", e);
+            alert("Cannot load baseline UAV audio. Please check WAV path on GitHub.");
+            endTrialOnce("audio-error");
+            }
+        })();
+        }
+
+
+
+      function handleTrialEnded() {
+        showRestCountdown();
+      }
+
+      /************* 8. Rest screens *************/
+      function showRestCountdown() {
+        try {
+          videoEl.pause();
+        } catch (e) {}
+        try {
+          baselineAudio.pause();stopCurrentAudioSession();
+
+        } catch (e) {}
+        sphereEl.setAttribute("visible", false);
+
+        hideWelcomePanel();
+        hideResumeMenu();
+
+        if (!restPanel || !restMain || !restCountdown) return;
+
+        
+        restMain.setAttribute(
+          "value",
+          "Please answer the questions and rest."
+        );
+        restCountdown.setAttribute("value", REST_SECONDS.toString() + " s");
+        restPanel.setAttribute("visible", true);
+        if (exitBtn3D) exitBtn3D.setAttribute("visible", true);
+
+        restRemaining = REST_SECONDS;
+        clearRestTimer();
+        restTimerId = setInterval(() => {
+          restRemaining -= 1;
+          if (restRemaining <= 0) {
+            clearRestTimer();
+            showRestNextOrEnd();
+          } else {
+            restCountdown.setAttribute("value", restRemaining + " s");
+          }
+        }, 1000);
+      }
+
+      function showRestNextOrEnd() {
+        if (!restPanel || !restMain || !restCountdown) return;
+
+        const nextIndex = currentTrialIndex + 1;
+        const total = sequenceItems.length;
+
+        
+
+        if (nextIndex < total) {
+          const label = "Next video (" + (nextIndex + 1) + "/" + total + ") will start.";
+          restMain.setAttribute("value", label);
+          restCountdown.setAttribute("value", "");
+          restPanel.setAttribute("visible", true);
+
+          setTimeout(() => {
+            restPanel.setAttribute("visible", false);
+            playTrial(nextIndex);
+          }, NEXT_WAIT_MS);
+        } else {
+          showRestEnd();
+        }
+      }
+
+      function showRestEnd() {
+        try {
+          videoEl.pause();
+        } catch (e) {}
+        try {
+          baselineAudio.pause();
+        } catch (e) {}
+        sphereEl.setAttribute("visible", false);
+        clearRestTimer();
+
+        hideWelcomePanel();
+        hideResumeMenu();
+
+        if (!restPanel || !restMain || !restCountdown) return;
+
+        
+        restMain.setAttribute("value", "Experiment finished.");
+        restCountdown.setAttribute("value", "");
+        restPanel.setAttribute("visible", true);
+        if (exitBtn3D) exitBtn3D.setAttribute("visible", true);
+
+        hasStartedExperiment = false;
+        setStatus("All trials have finished. Experiment is over.");
+      }
+    </script>
+  </body>
+</html>
