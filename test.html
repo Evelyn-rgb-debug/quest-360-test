@@ -13,26 +13,23 @@
     </style>
 
     <script>
-      // Simple hover feedback (works for gaze + controller + mouse)
+      // Minimal "look-at camera" so a fixed object always faces user.
+      AFRAME.registerComponent("look-at-camera", {
+        tick: function () {
+          const cam = this.el.sceneEl.camera;
+          if (!cam) return;
+          this.el.object3D.lookAt(cam.position);
+        },
+      });
+
+      // Hover feedback for debugging (optional but useful)
       AFRAME.registerComponent("hover-feedback", {
         schema: { hoverColor: { default: "#DDDDDD" }, baseColor: { default: "#FFFFFF" } },
         init: function () {
           const el = this.el;
-          const base = this.data.baseColor;
-          const hover = this.data.hoverColor;
-
-          el.setAttribute("material", "color", base);
-
-          el.addEventListener("mouseenter", () => {
-            el.setAttribute("material", "color", hover);
-            console.log("[hover]", el.id);
-          });
-          el.addEventListener("mouseleave", () => {
-            el.setAttribute("material", "color", base);
-          });
-          el.addEventListener("click", () => {
-            console.log("[click]", el.id);
-          });
+          el.setAttribute("material", "color", this.data.baseColor);
+          el.addEventListener("mouseenter", () => el.setAttribute("material", "color", this.data.hoverColor));
+          el.addEventListener("mouseleave", () => el.setAttribute("material", "color", this.data.baseColor));
         },
       });
 
@@ -49,7 +46,8 @@
           const replayBtn = document.getElementById("replayBtn");
           const exitBtn = document.getElementById("exitBtn");
 
-          const vrExitHud = document.getElementById("vrExitHud");
+          // WORLD-FIXED Exit VR (not head-locked)
+          const vrExitWorld = document.getElementById("vrExitWorld");
           const vrExitBtn = document.getElementById("vrExitBtn");
 
           const safePlay = async () => {
@@ -57,7 +55,6 @@
               await video.play();
             } catch (e) {
               console.warn("Video play blocked:", e);
-              // If play is blocked, show start panel again
               startPanel.setAttribute("visible", "true");
             }
           };
@@ -73,7 +70,6 @@
           };
 
           const startDemo = async () => {
-            console.log("== startDemo triggered ==");
             startPanel.setAttribute("visible", "false");
             endPanel.setAttribute("visible", "false");
 
@@ -83,31 +79,20 @@
           };
 
           const replayDemo = async () => {
-            console.log("== replayDemo triggered ==");
             endPanel.setAttribute("visible", "false");
             video.currentTime = 0;
             await safePlay();
           };
 
           const exitDemo = () => {
-            console.log("== exitDemo triggered ==");
             try { video.pause(); } catch (_) {}
-
-            try {
-              if (scene && scene.exitVR && scene.is("vr-mode")) scene.exitVR();
-            } catch (_) {}
-
+            try { if (scene && scene.exitVR && scene.is("vr-mode")) scene.exitVR(); } catch (_) {}
             startPanel.setAttribute("visible", "true");
             endPanel.setAttribute("visible", "false");
           };
 
           const exitVROnly = () => {
-            console.log("== exitVROnly triggered ==");
-            try {
-              if (scene && scene.exitVR && scene.is("vr-mode")) scene.exitVR();
-            } catch (e) {
-              console.warn("exitVR failed:", e);
-            }
+            try { if (scene && scene.exitVR && scene.is("vr-mode")) scene.exitVR(); } catch (_) {}
           };
 
           // Bind buttons
@@ -116,23 +101,17 @@
           exitBtn.addEventListener("click", exitDemo);
           vrExitBtn.addEventListener("click", exitVROnly);
 
-          // End detection
-          video.addEventListener("ended", () => {
-            endPanel.setAttribute("visible", "true");
-          });
+          // Show end panel when video ends
+          video.addEventListener("ended", () => endPanel.setAttribute("visible", "true"));
 
-          // VR enter/exit handling
-          scene.addEventListener("enter-vr", () => {
-            vrExitHud.setAttribute("visible", "true");
-          });
-          scene.addEventListener("exit-vr", () => {
-            vrExitHud.setAttribute("visible", "false");
-          });
+          // VR enter/exit -> show/hide WORLD Exit VR button
+          scene.addEventListener("enter-vr", () => vrExitWorld.setAttribute("visible", "true"));
+          scene.addEventListener("exit-vr", () => vrExitWorld.setAttribute("visible", "false"));
 
           // Initial state
           startPanel.setAttribute("visible", "true");
           endPanel.setAttribute("visible", "false");
-          vrExitHud.setAttribute("visible", "false");
+          vrExitWorld.setAttribute("visible", "false");
         },
       });
     </script>
@@ -160,46 +139,46 @@
       <!-- 360 videosphere -->
       <a-videosphere src="#video360" rotation="0 -90 0"></a-videosphere>
 
-      <!-- Camera rig -->
+      <!-- Camera + gaze cursor (fuse) -->
       <a-entity id="rig">
         <a-camera position="0 1.6 0" look-controls="reverseMouseDrag: false">
-          <!-- Gaze cursor (fuse) -->
           <a-cursor
-            id="cursor"
             fuse="true"
             fuse-timeout="900"
             raycaster="objects: .clickable; far: 20; interval: 50"
           ></a-cursor>
-
-          <!-- VR Exit HUD -->
-          <a-entity id="vrExitHud" position="0 -0.62 -1.25" visible="false">
-            <a-plane
-              id="vrExitBtn"
-              class="clickable"
-              hover-feedback="baseColor: #FFFFFF; hoverColor: #DDDDDD"
-              width="0.9"
-              height="0.24"
-              position="0 0 0.08"
-              material="shader: flat; opacity: 0.92"
-            ></a-plane>
-            <a-text
-              value="Exit VR"
-              align="center"
-              color="#000000"
-              width="1.2"
-              position="0 0 0.10"
-            ></a-text>
-          </a-entity>
         </a-camera>
+      </a-entity>
 
-        <!-- Controller laser (optional but very reliable on Quest) -->
-        <a-entity laser-controls="hand: right" raycaster="objects: .clickable; far: 20"></a-entity>
-        <a-entity laser-controls="hand: left"  raycaster="objects: .clickable; far: 20"></a-entity>
+      <!-- WORLD-FIXED Exit VR button (does NOT follow head) -->
+      <!-- Put it at a fixed world position in front-right of the user. Adjust as needed. -->
+      <a-entity
+        id="vrExitWorld"
+        position="1.1 1.15 -2.0"
+        visible="false"
+        look-at-camera
+      >
+        <a-plane
+          id="vrExitBtn"
+          class="clickable"
+          hover-feedback="baseColor: #FFFFFF; hoverColor: #DDDDDD"
+          width="0.9"
+          height="0.24"
+          position="0 0 0.08"
+          material="shader: flat; opacity: 0.92"
+        ></a-plane>
+        <a-text
+          value="Exit VR"
+          align="center"
+          color="#000000"
+          width="1.2"
+          position="0 0 0.10"
+        ></a-text>
       </a-entity>
 
       <!-- Start Panel -->
       <a-entity id="startPanel" position="0 1.6 -2.2" visible="true">
-        <!-- Background plane pushed BACK to avoid intercepting rays -->
+        <!-- Background plane moved back so it doesn't block clicks -->
         <a-plane
           width="2.2"
           height="1.2"
@@ -208,14 +187,13 @@
         ></a-plane>
 
         <a-text
-          value="Demo video (test.mp4)\nGaze or click the button to start"
+          value="Demo video (test.mp4)\nGaze the button to start"
           align="center"
           color="#FFFFFF"
           width="2.0"
           position="0 0.25 0.02"
         ></a-text>
 
-        <!-- Start button plane pushed FORWARD clearly -->
         <a-entity position="0 -0.35 0.00">
           <a-plane
             id="startBtn"
